@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -216,3 +217,23 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# --- TotalOrch project-specific ---
+
+# Secrets and local configuration (keep out of version control)
+.env
+tests/settings.json
+
+# Tooling caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# OS and editor artifacts
+.DS_Store
+
+# Local agent workspace
+.freebuff/

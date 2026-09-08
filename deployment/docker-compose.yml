@@ -1,0 +1,11 @@
+services:
+  omniroute:
+    image: ${OMNIROUTE_IMAGE:-omniroute:local}
+    restart: unless-stopped
+    ports:
+      - "${OMNIROUTE_PORT:-20128}:20128"
+    environment:
+      PORT: 20128
+
+  # The platform API will be added in a later MVP phase. Keeping OmniRoute as
+  # a managed compose service now fixes the lifecycle and network boundary.
