@@ -37,7 +37,11 @@ from .observations import (
     capability_fields,
     claimed,
 )
-from .omniroute_source import OmniRouteCatalogSource, normalize_capability_flags
+from .omniroute_source import (
+    GatewayCatalogSource,
+    OmniRouteCatalogSource,
+    normalize_capability_flags,
+)
 from .openrouter_source import OpenRouterCatalogSource
 from .service import (
     ModelRegistryService,
@@ -60,6 +64,7 @@ __all__ = [
     "EntityKind",
     "FamilyObservation",
     "FieldValue",
+    "GatewayCatalogSource",
     "IdentityRules",
     "ModelRegistryService",
     "ModelRegistryStore",

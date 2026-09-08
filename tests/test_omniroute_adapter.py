@@ -15,6 +15,7 @@ class StubTransport:
         self.responses = responses
         self.calls: list[tuple[str, str, Mapping[str, Any] | None]] = []
         self.stream_lines = stream_lines or []
+        self.last_headers: dict[str, str] = {}
 
     async def request(
         self,
@@ -26,6 +27,7 @@ class StubTransport:
         timeout: float,
     ) -> HttpResponse:
         self.calls.append((method, url, json_body))
+        self.last_headers = dict(headers)
         response = self.responses.pop(0)
         return response
 

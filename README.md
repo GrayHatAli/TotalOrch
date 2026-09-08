@@ -1,9 +1,14 @@
 # TotalOrch
 
-The platform is the control plane above a managed OmniRoute gateway. It owns
+The platform is the control plane above a managed execution gateway. It owns
 model intelligence, default agent profiles, semantic routing, workflow
-coordination, and explainability. OmniRoute owns provider adapters,
+coordination, and explainability. The gateway owns provider adapters,
 credentials, protocol translation, and operational endpoint fallback.
+
+TotalOrch is **not tied to one gateway product**. OmniRoute is the default
+managed gateway, and any OpenAI-compatible LLM router — LiteLLM, 9Router,
+One API / New API, FreeLLMAPI, and similar proxies — works through the same
+`GatewayAdapter` boundary.
 
 The current implementation covers the foundation, domain contracts, the
 Gateway Adapter boundary, the Model Intelligence Registry, default Agent
@@ -19,9 +24,7 @@ cp .env.example .env
 .venv/bin/python -m pytest
 ```
 
-The live adapter reads `OMNIROUTE_BASE_URL`, `OMNIROUTE_API_KEY`, and
-`OMNIROUTE_MANAGEMENT_KEY` from the environment. Secrets are intentionally
-kept outside the Model Registry and event metadata.
+Secrets are intentionally kept outside the Model Registry and event metadata.
 
 With a local `tests/settings.json` copied from a Claude Code setup, run the
 manual live smoke test. It is intentionally excluded from the normal pytest
@@ -32,18 +35,58 @@ uv run --with 'pydantic>=2.7,<3' --with 'httpx>=0.27,<1' \
   python tests/live_omniroute_smoke.py
 ```
 
-## Managed OmniRoute
+## Gateway compatibility
 
-The default deployment contract is documented in
-[`deployment/README.md`](deployment/README.md). The platform owns the
-OmniRoute lifecycle in the managed deployment; users do not configure an
-OmniRoute plugin or reimplement provider adapters.
+The gateway is selected with `GATEWAY_TYPE`; every adapter implements the
+same `GatewayAdapter` contract, so the registry, profiles, and router do not
+change when the gateway changes.
+
+| `GATEWAY_TYPE` | Gateway | Notes |
+| :--- | :--- | :--- |
+| `omniroute` (default) | OmniRoute | Full management API: connections, per-provider discovery, validation, health |
+| `litellm` | LiteLLM proxy | OpenAI-compatible; default port 4000 |
+| `9router` | 9Router | OpenAI-compatible; default port 3613 |
+| `oneapi` / `newapi` | One API / New API | OpenAI-compatible; default port 3000 |
+| `freellmapi` | FreeLLMAPI | OpenAI-compatible |
+| any other value | any OpenAI-compatible router | Treated generically |
+
+Generic routers are configured with:
+
+```bash
+GATEWAY_TYPE=litellm            # or 9router, oneapi, newapi, freellmapi, ...
+GATEWAY_BASE_URL=http://localhost:4000
+GATEWAY_API_KEY=sk-...          # optional
+GATEWAY_TIMEOUT_SECONDS=120
+GATEWAY_MAX_RETRIES=2
+```
+
+Precedence for the base URL: explicit constructor argument >
+`GATEWAY_BASE_URL` > the known router's default port > the generic fallback.
+
+Behavior notes for generic routers:
+
+- Discovery reads `GET /v1/models`; one Provider connection is derived per
+  publisher prefix found in the catalog (bare ids group under `default`).
+- Execution sends the catalog model id verbatim — set
+  `prefix_model_with_provider=True` (or use the OmniRoute adapter) for
+  gateways that route by `provider/model` identifiers.
+- Health checks fall back to catalog presence when the router has no health
+  API; a router error makes the check report unhealthy rather than guess.
+- Registry provenance is labeled per gateway (`omniroute`, `litellm`,
+  `9router`, ...), so fields observed through different gateways stay
+  distinguishable when several gateways serve the same model.
+
+The default managed deployment remains documented in
+[`deployment/README.md`](deployment/README.md): the platform owns the
+OmniRoute lifecycle and users do not configure a gateway plugin or
+reimplement provider adapters.
 
 ## Package boundaries
 
 - `total_orch.domain`: versioned domain contracts.
-- `total_orch.gateway`: the gateway-neutral adapter interface, fake
-  adapter, and OmniRoute implementation.
+- `total_orch.gateway`: the gateway-neutral adapter interface, the shared
+  OpenAI-compatible base, the fake adapter, the OmniRoute implementation,
+  the generic OpenAI-compatible adapter, and the `GATEWAY_TYPE` factory.
 - `total_orch.registry`: the local Model Intelligence Registry —
   persistence, catalog ingestion, canonical identity, field-authority
   merging, staleness, and query APIs.

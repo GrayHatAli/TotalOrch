@@ -40,6 +40,15 @@ def _float_env(name: str, default: float) -> float:
 class Settings:
     environment: str = "development"
     log_level: str = "INFO"
+    # Generic gateway selection. "omniroute" (the default managed gateway)
+    # uses the OmniRoute management API; any other value selects the generic
+    # OpenAI-compatible adapter (LiteLLM, 9Router, One API / New API,
+    # FreeLLMAPI, ...).
+    gateway_type: str = "omniroute"
+    gateway_base_url: str | None = None
+    gateway_api_key: str | None = None
+    gateway_timeout_seconds: float = 120.0
+    gateway_max_retries: int = 2
     omniroute_base_url: str = "http://localhost:20128"
     omniroute_api_key: str | None = None
     omniroute_management_key: str | None = None
@@ -56,6 +65,12 @@ class Settings:
         return cls(
             environment=os.getenv("ORCHESTRATOR_ENV", "development"),
             log_level=os.getenv("ORCHESTRATOR_LOG_LEVEL", "INFO"),
+            gateway_type=os.getenv("GATEWAY_TYPE", "omniroute").strip().lower(),
+            gateway_base_url=(os.getenv("GATEWAY_BASE_URL") or None)
+            and os.getenv("GATEWAY_BASE_URL", "").rstrip("/"),
+            gateway_api_key=os.getenv("GATEWAY_API_KEY") or None,
+            gateway_timeout_seconds=_float_env("GATEWAY_TIMEOUT_SECONDS", 120.0),
+            gateway_max_retries=_int_env("GATEWAY_MAX_RETRIES", 2),
             omniroute_base_url=os.getenv("OMNIROUTE_BASE_URL", "http://localhost:20128").rstrip("/"),
             omniroute_api_key=os.getenv("OMNIROUTE_API_KEY") or None,
             omniroute_management_key=os.getenv("OMNIROUTE_MANAGEMENT_KEY") or None,
@@ -74,6 +89,11 @@ class Settings:
         return {
             "environment": self.environment,
             "log_level": self.log_level,
+            "gateway_type": self.gateway_type,
+            "gateway_base_url": self.gateway_base_url,
+            "gateway_api_key_configured": self.gateway_api_key is not None,
+            "gateway_timeout_seconds": self.gateway_timeout_seconds,
+            "gateway_max_retries": self.gateway_max_retries,
             "omniroute_base_url": self.omniroute_base_url,
             "omniroute_api_key_configured": self.omniroute_api_key is not None,
             "omniroute_management_key_configured": self.omniroute_management_key is not None,

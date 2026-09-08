@@ -1,4 +1,4 @@
-"""OmniRoute catalog ingestion (MVP-0302).
+"""Gateway catalog ingestion (MVP-0302).
 
 Discovers connections and their models through the ``GatewayAdapter`` boundary
 and turns them into normalized observations. Model ids are only stripped of
@@ -7,6 +7,12 @@ aggregator connection are preserved because the gateway needs them verbatim
 for execution. Every model becomes one variant observation (context claim) and
 one endpoint observation (capability claims as observed at that Provider
 Endpoint).
+
+The source is gateway-agnostic: it works with the managed OmniRoute
+deployment and equally with any OpenAI-compatible router (LiteLLM, 9Router,
+One API / New API, FreeLLMAPI, ...) behind the same ``GatewayAdapter``
+boundary. Each gateway writes its own provenance label, so fields observed
+through different gateways remain distinguishable in the registry.
 """
 
 from __future__ import annotations
@@ -72,14 +78,21 @@ def normalize_capability_flags(raw: Mapping[str, Any]) -> ModelCapabilities:
     return ModelCapabilities(**kwargs)
 
 
-class OmniRouteCatalogSource:
-    """Reads the current deployment's configured connections and models."""
+class GatewayCatalogSource:
+    """Reads the current deployment's configured connections and models.
 
-    source = "omniroute"
+    Works with every ``GatewayAdapter`` implementation; ``source`` labels the
+    provenance of the claims it records (``omniroute``, ``litellm``,
+    ``9router``, ...).
+    """
 
-    def __init__(self, adapter: GatewayAdapter, rules: IdentityRules) -> None:
+    source = "gateway"
+
+    def __init__(self, adapter: GatewayAdapter, rules: IdentityRules, *, source: str | None = None) -> None:
         self._adapter = adapter
         self._rules = rules
+        if source is not None:
+            self.source = source
 
     async def fetch(self) -> CatalogBatch:
         batch = CatalogBatch()
@@ -122,3 +135,9 @@ class OmniRouteCatalogSource:
             VariantObservation(source=self.source, fields=variant_fields, variant_id=identity.variant_id),
             EndpointObservation(source=self.source, fields=capabilities_claims, endpoint=endpoint_ref),
         )
+
+
+class OmniRouteCatalogSource(GatewayCatalogSource):
+    """Gateway catalog source pinned to the ``omniroute`` provenance label."""
+
+    source = "omniroute"
