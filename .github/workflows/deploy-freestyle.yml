@@ -1,0 +1,64 @@
+name: Deploy TotalOrch to Freestyle
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: freestyle-totalorch-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FREESTYLE_TEAM: acct-567dd4242ec64326b257ee9e162a4ff0
+      FREESTYLE_VM_ID: vm-18cb8ce85fc6466cadda9f0b5d65d42f
+    steps:
+      - name: Deploy and build on Freestyle VM
+        env:
+          FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          : "${FREESTYLE_API_KEY:?The FREESTYLE_API_KEY GitHub Actions secret is required}"
+
+          remote_script="$(cat <<'REMOTE_SCRIPT'
+          set -eu
+
+          repo_url="https://github.com/GrayHatAli/TotalOrch.git"
+          app_dir="$HOME/TotalOrch"
+
+          if [ -d "$app_dir/.git" ]; then
+            git -C "$app_dir" fetch --prune origin main
+            git -C "$app_dir" checkout -B main origin/main
+          else
+            git clone --branch main --depth 1 "$repo_url" "$app_dir"
+          fi
+
+          cd "$app_dir"
+
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "python3 is required on the Freestyle VM" >&2
+            exit 1
+          fi
+
+          if ! command -v uv >/dev/null 2>&1; then
+            python3 -m pip install --user uv
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+
+          uv sync --frozen --extra dev
+          uv run pytest
+          uv build
+
+          echo "Built TotalOrch at $(git rev-parse --short HEAD)"
+          REMOTE_SCRIPT
+          )"
+
+          npx --yes freestyle@latest vm ssh "$FREESTYLE_VM_ID"             --team "$FREESTYLE_TEAM"             --exec "$remote_script"
