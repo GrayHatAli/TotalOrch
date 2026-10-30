@@ -113,16 +113,13 @@ class RouteDecisionStore:
             params.append(selected_endpoint_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"SELECT payload FROM route_decisions {where} ORDER BY created_at, id"
-        if limit is not None:
-            if limit < 0:
-                raise ValueError("limit must not be negative")
-            sql += " LIMIT ?"
-            params.append(limit)
+        if limit is not None and limit < 0:
+            raise ValueError("limit must not be negative")
         rows = self._connection.execute(sql, params).fetchall()
         decisions = [RouteDecision.model_validate_json(str(row["payload"])) for row in rows]
         if explored is not None:
             decisions = [decision for decision in decisions if decision.explored is explored]
-        return decisions
+        return decisions if limit is None else decisions[:limit]
 
     def count_decisions(self) -> int:
         return int(self._connection.execute("SELECT COUNT(*) AS n FROM route_decisions").fetchone()["n"])

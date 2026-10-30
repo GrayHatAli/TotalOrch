@@ -190,7 +190,7 @@ cross-process boundary.
 - No caller receives `IntegrityError` for a duplicate id.
 - Saving a different id still works while duplicates are being retried.
 
-## [ ] 7. Make family pool ids globally unique
+## [x] 7. Make family pool ids globally unique
 
 **Location:** `src/total_orch/profiles/builder.py:488-491`
 
@@ -222,7 +222,7 @@ persisting or exposing these ids to users.
 - Overrides can target either pool independently.
 - Existing single-publisher family tests still pass.
 
-## [ ] 8. Apply `explored` filtering before `LIMIT`
+## [x] 8. Apply `explored` filtering before `LIMIT`
 
 **Location:** `src/total_orch/router/store.py:100-129`
 
@@ -250,7 +250,7 @@ negative limit before querying as the code already does.
 - `limit=None` returns every matching record.
 - Existing policy and endpoint filters still combine correctly.
 
-## [ ] 9. Enforce Ruff and mypy in CI
+## [x] 9. Enforce Ruff and mypy in CI
 
 **Locations:** the deployment workflow around lines 56-58 and
 `pyproject.toml:16-38`
@@ -276,7 +276,7 @@ the package build. The current checkout already reports five Ruff errors and
 - Introducing an unused import or the current exception-style violation makes
   CI fail.
 
-## [ ] 10. Add bounded backoff to retryable completion failures
+## [x] 10. Add bounded backoff to retryable completion failures
 
 **Location:** `src/total_orch/gateway/_openai.py:402-413`
 
@@ -301,7 +301,7 @@ the retry wave can amplify rate limiting and increase latency and cost.
 - Non-retryable failures make one request only.
 - The configured maximum number of attempts is never exceeded.
 
-## [ ] Final validation
+## [x] Final validation
 
 Run the full local validation after all checked sections are complete:
 

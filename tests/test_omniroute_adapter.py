@@ -105,7 +105,9 @@ async def test_omniroute_executes_provider_prefixed_model() -> None:
     result = await adapter(transport).complete(request())
 
     assert result.output_text == "done"
-    assert transport.calls[0][2]["model"] == "provider-a/luna-5.6-pro"
+    body = transport.calls[0][2]
+    assert body is not None
+    assert body["model"] == "provider-a/luna-5.6-pro"
 
 
 @pytest.mark.asyncio

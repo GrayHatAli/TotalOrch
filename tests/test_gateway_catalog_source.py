@@ -46,9 +46,11 @@ async def test_generic_source_uses_router_name_as_provenance() -> None:
     assert batch.endpoints[0].fields["cap.tool_calling"].provenance.source == "litellm"
     # The serving-provider qualifier is stripped; the publisher prefix is
     # recovered through identity resolution (provider == publisher here).
-    assert batch.endpoints[0].endpoint.provider_model_name == "gpt-4o"
-    assert batch.endpoints[0].endpoint.model_variant_id == "openai/gpt-4o:gpt-4o"
-    assert batch.endpoints[0].endpoint.id == "openai/gpt-4o"
+    endpoint = batch.endpoints[0].endpoint
+    assert endpoint is not None
+    assert endpoint.provider_model_name == "gpt-4o"
+    assert endpoint.model_variant_id == "openai/gpt-4o:gpt-4o"
+    assert endpoint.id == "openai/gpt-4o"
 
 
 @pytest.mark.asyncio
@@ -86,4 +88,8 @@ async def test_two_gateways_serving_one_model_keep_distinct_provenance() -> None
 
     assert {observation.variant_id for observation in combined.variants} == {"openai/gpt-4o:gpt-4o"}
     assert {observation.source for observation in combined.variants} == {"litellm", "9router"}
-    assert {observation.endpoint.provider for observation in combined.endpoints} == {"openai"}
+    assert {
+        observation.endpoint.provider
+        for observation in combined.endpoints
+        if observation.endpoint is not None
+    } == {"openai"}

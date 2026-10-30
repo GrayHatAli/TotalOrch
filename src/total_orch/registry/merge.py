@@ -125,17 +125,17 @@ def observing_provenance(observations: Iterable[EntityObservation]) -> tuple[Sou
 
 def _int_value(value: ObservedValue) -> int:
     if isinstance(value, bool):
-        raise ValueError(f"cannot coerce boolean to an integer: {value!r}")
+        raise TypeError(f"cannot coerce boolean to an integer: {value!r}")
     if isinstance(value, tuple):
-        raise ValueError(f"cannot coerce tuple to an integer: {value!r}")
+        raise TypeError(f"cannot coerce tuple to an integer: {value!r}")
     return int(value)
 
 
 def _float_value(value: ObservedValue) -> float:
     if isinstance(value, bool):
-        raise ValueError(f"cannot coerce boolean to a float: {value!r}")
+        raise TypeError(f"cannot coerce boolean to a float: {value!r}")
     if isinstance(value, tuple):
-        raise ValueError(f"cannot coerce tuple to a float: {value!r}")
+        raise TypeError(f"cannot coerce tuple to a float: {value!r}")
     return float(value)
 
 

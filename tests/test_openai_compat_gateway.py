@@ -26,6 +26,8 @@ from total_orch.gateway.events import completion_event
 from total_orch.gateway.models import ChatMessage, GatewayToolCall
 from total_orch.gateway.omniroute import HttpResponse
 
+__all__ = ["StubTransport", "responses"]
+
 
 def settings_for(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
@@ -85,7 +87,9 @@ async def test_openai_compat_sends_catalog_id_verbatim() -> None:
 
     assert result.output_text == "hi"
     # No provider prefixing: One API / New API / FreeLLMAPI style channels.
-    assert transport.calls[0][2]["model"] == "openai/gpt-4o"
+    body = transport.calls[0][2]
+    assert body is not None
+    assert body["model"] == "openai/gpt-4o"
     assert transport.calls[0][1] == "http://router.test/v1/chat/completions"
 
 
@@ -172,7 +176,9 @@ async def test_openai_compat_prefixes_model_when_configured() -> None:
     await adapter.complete(bare_request())
 
     # OmniRoute-style addressing: the provider qualifier is added on the wire.
-    assert transport.calls[0][2]["model"] == "openai/gpt-4o"
+    body = transport.calls[0][2]
+    assert body is not None
+    assert body["model"] == "openai/gpt-4o"
 
 
 @pytest.mark.asyncio
@@ -206,6 +212,53 @@ async def test_openai_compat_retries_transient_failure() -> None:
 
     assert result.output_text == "ok"
     assert len(transport.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_respects_retry_after_before_retrying(monkeypatch: pytest.MonkeyPatch) -> None:
+    delays: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr("total_orch.gateway._openai.asyncio.sleep", fake_sleep)
+    transport = StubTransport(
+        [
+            HttpResponse(429, {"error": "rate limited"}, {"Retry-After": "2"}),
+            HttpResponse(200, {"choices": [{"message": {"content": "ok"}}]}, {}),
+        ]
+    )
+    adapter = OpenAICompatAdapter(base_url="http://router.test", max_retries=1, transport=transport)
+
+    result = await adapter.complete(request())
+
+    assert result.output_text == "ok"
+    assert delays == [2.0]
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_uses_capped_exponential_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    delays: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr("total_orch.gateway._openai.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("total_orch.gateway._openai.random.uniform", lambda _low, _high: 0.0)
+    transport = StubTransport(
+        [
+            HttpResponse(503, {"error": "temporary"}, {}),
+            HttpResponse(503, {"error": "temporary"}, {}),
+            HttpResponse(200, {"choices": [{"message": {"content": "ok"}}]}, {}),
+        ]
+    )
+    adapter = OpenAICompatAdapter(base_url="http://router.test", max_retries=2, transport=transport)
+
+    result = await adapter.complete(request())
+
+    assert result.output_text == "ok"
+    assert delays == [0.25, 0.5]
+    assert len(transport.calls) == 3
 
 
 @pytest.mark.asyncio

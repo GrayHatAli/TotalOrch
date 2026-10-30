@@ -25,6 +25,7 @@ from total_orch.registry import (
 from total_orch.registry.http import CatalogResponse
 from total_orch.registry.identity import split_endpoint_id, split_variant_id
 from total_orch.registry.observations import EndpointObservation, EndpointRef, FieldValue
+from total_orch.registry.service import CatalogSource
 
 
 def claim(value: object, source: str) -> FieldValue:
@@ -194,8 +195,9 @@ def test_endpoint_keeps_runtime_facts_separate_from_base_metadata() -> None:
         ),
     ]
 
-    record, field_provenance = assemble_endpoint(observations)
-    assert record is not None
+    assembled = assemble_endpoint(observations)
+    assert assembled is not None
+    record, field_provenance = assembled
     endpoint, _provenance = record
 
     assert endpoint.connection == connection
@@ -373,7 +375,7 @@ async def synced_service() -> ModelRegistryService:
 
 
 @pytest.mark.asyncio
-async def test_service_groups_one_model_across_two_providers(synced_service) -> None:
+async def test_service_groups_one_model_across_two_providers(synced_service: ModelRegistryService) -> None:
     service = synced_service
 
     counts = service.counts()
@@ -395,7 +397,7 @@ async def test_service_groups_one_model_across_two_providers(synced_service) -> 
 
 
 @pytest.mark.asyncio
-async def test_service_merges_cross_catalog_claims_with_authority(synced_service) -> None:
+async def test_service_merges_cross_catalog_claims_with_authority(synced_service: ModelRegistryService) -> None:
     service = synced_service
 
     variant = service.get_variant("openai/gpt-4o:gpt-4o")
@@ -417,7 +419,7 @@ async def test_service_merges_cross_catalog_claims_with_authority(synced_service
 async def test_service_sync_is_idempotent_and_preserves_row_writes() -> None:
     store = new_store()
     rules = IdentityRules(name_overrides={"luna-5.6-pro": "openai/luna:luna-5.6-pro"})
-    sources = [
+    sources: list[CatalogSource] = [
         OmniRouteCatalogSource(gateway_adapter(), rules),
         ModelsDevCatalogSource("https://models.dev", rules, transport=StubTransport(models_dev_payload())),
         OpenRouterCatalogSource("https://openrouter.ai", rules, transport=StubTransport(openrouter_payload())),
@@ -452,14 +454,14 @@ async def test_service_reports_source_failures_without_aborting() -> None:
     class BrokenSource:
         source = "broken"
 
-        async def fetch(self):
+        async def fetch(self) -> CatalogBatch:
             raise RuntimeError("catalog unreachable")
 
     service = ModelRegistryService(
         store,
         rules,
         sources=[
-            BrokenSource(),  # type: ignore[arg-type]
+            BrokenSource(),
             ModelsDevCatalogSource("https://models.dev", rules, transport=StubTransport(models_dev_payload())),
         ],
     )
@@ -482,7 +484,7 @@ async def test_service_reports_entity_errors_as_failed_sync() -> None:
     class PartiallyBrokenSource:
         source = "broken-entity"
 
-        async def fetch(self):
+        async def fetch(self) -> CatalogBatch:
             return CatalogBatch(
                 variants=[variant_observation("models.dev", "openai/bad:bad", context_window="not-an-int")]
             )
@@ -504,7 +506,7 @@ async def test_service_with_no_sources_is_not_successful() -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_query_apis(synced_service) -> None:
+async def test_service_query_apis(synced_service: ModelRegistryService) -> None:
     service = synced_service
 
     assert {family.id for family in service.list_families()} == {"openai/gpt-4o", "openai/luna"}

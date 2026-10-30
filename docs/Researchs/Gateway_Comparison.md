@@ -92,7 +92,7 @@ The last three rows are intentionally Orchestrator responsibilities. No gateway 
 - Model Family and Model Variant grouping across Providers
 - Effective endpoint capabilities and reasoning-effort metadata
 - Default agent profiles built automatically after synchronization
-- Pools such as `tool_calling`, `luna-family`, `large_context_reasoning`, and `planner-quality`
+- Pools such as `tool_calling`, `openai/luna-family`, `large_context_reasoning`, and `planner-quality`
 - Role-aware policies for Planner, Developer/Coder, Reviewer, and Researcher
 - A transparent routing decision with score factors and exclusion reasons
 - Task-outcome learning and project-specific suitability scores

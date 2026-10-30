@@ -13,9 +13,13 @@ rest of the platform sees gateway-neutral records and normalized errors.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import random
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 from total_orch.domain import ProviderConnectionRef
@@ -29,6 +33,10 @@ from .models import (
     GatewayStreamChunk,
     GatewayToolCall,
 )
+
+_RETRY_BACKOFF_BASE_SECONDS = 0.25
+_RETRY_BACKOFF_MAX_SECONDS = 8.0
+_RETRY_AFTER_MAX_SECONDS = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +164,30 @@ class _HttpxTransport:
 
 def is_retryable_status(status_code: int) -> bool:
     return status_code in {408, 409, 425, 429} or status_code >= 500
+
+
+def _retry_after_seconds(headers: Mapping[str, str]) -> float | None:
+    raw_value = next((value for key, value in headers.items() if key.lower() == "retry-after"), None)
+    if raw_value is None:
+        return None
+    try:
+        return max(0.0, float(raw_value.strip()))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+
+
+def _retry_delay(attempt: int, retry_after_seconds: float | None) -> float:
+    if retry_after_seconds is not None:
+        return min(_RETRY_AFTER_MAX_SECONDS, retry_after_seconds)
+    backoff = min(_RETRY_BACKOFF_MAX_SECONDS, _RETRY_BACKOFF_BASE_SECONDS * (2**attempt))
+    jitter = float(random.uniform(0.0, min(0.1, backoff * 0.25)))
+    return float(min(_RETRY_BACKOFF_MAX_SECONDS, backoff + jitter))
 
 
 def items_from_payload(payload: Any, *keys: str) -> list[Mapping[str, Any]]:
@@ -327,6 +359,7 @@ class OpenAICompatGatewayAdapter(GatewayAdapter):
                 f"{self.gateway_name} returned HTTP {response.status_code}",
                 retryable=is_retryable_status(response.status_code),
                 status_code=response.status_code,
+                retry_after_seconds=_retry_after_seconds(response.headers),
             )
         return response
 
@@ -451,6 +484,7 @@ class OpenAICompatGatewayAdapter(GatewayAdapter):
             except GatewayError as exc:
                 if not exc.retryable or attempt == attempts - 1:
                     raise
+                await asyncio.sleep(_retry_delay(attempt, exc.retry_after_seconds))
         raise AssertionError("unreachable")
 
     async def stream(self, request: GatewayRequest) -> AsyncIterator[GatewayStreamChunk]:

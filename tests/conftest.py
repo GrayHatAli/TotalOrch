@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from total_orch.registry.http import CatalogResponse, CatalogTransport
+from total_orch.registry.http import CatalogResponse
 
 
 class StubCatalogTransport:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from itertools import chain, repeat
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -20,6 +21,8 @@ from total_orch.router import (
     POLICY_PRESETS,
     ExplainableRouter,
     HealthObservation,
+    RouteOutcome,
+    RoutePreview,
     RoutingPolicy,
     assemble_candidates,
     policy_from_preferences,
@@ -51,7 +54,7 @@ def _variant(
         family_id=family_id,
         name=name,
         context_window=context_window,
-        capabilities=ModelCapabilities(**capabilities),
+        capabilities=ModelCapabilities(**cast(Any, capabilities)),
     )
 
 
@@ -72,7 +75,7 @@ def _endpoint(
         provider_model_name=provider_model_name,
         model_variant_id=variant_id,
         connection=ProviderConnectionRef(id=f"{provider}-account-1", provider=provider),
-        capabilities=ModelCapabilities(**capabilities),
+        capabilities=ModelCapabilities(**cast(Any, capabilities)),
         health=health,
         latency_p95_ms=latency_p95_ms,
         input_cost_per_million=input_cost_per_million,
@@ -161,7 +164,7 @@ def _preview(
     endpoint_ids: tuple[str, ...],
     policy: RoutingPolicy | None = None,
     **kwargs: object,
-):
+) -> RoutePreview:
     variants, endpoints = _world()
     return ExplainableRouter().preview(
         request,
@@ -177,7 +180,7 @@ def _route(
     endpoint_ids: tuple[str, ...],
     policy: RoutingPolicy | None = None,
     **kwargs: object,
-):
+) -> RouteOutcome:
     variants, endpoints = _world()
     return ExplainableRouter().route(
         request,

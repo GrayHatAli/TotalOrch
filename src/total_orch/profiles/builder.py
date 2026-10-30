@@ -8,8 +8,8 @@ maintained by hand. The builder emits three families of pools:
   capability claim satisfies the pool's gate. Endpoint-level claims win
   over canonical variant metadata, and an unknown claim never satisfies a
   hard gate (the registry's tri-state design is preserved).
-- Family pools (MVP-0410): ``{family}-family`` for every family that has
-  routable endpoints, e.g. ``luna-family``.
+- Family pools (MVP-0410): ``{canonical-family-id}-family`` for every family
+  that has routable endpoints, e.g. ``openai/luna-family``.
 - Role pools (MVP-0411): one pool per built-in agent definition under the
   role's default pool id (``planner-quality``, ``coder-balanced``, ...).
   Membership enforces the definition's hard capability requirements before
@@ -487,8 +487,7 @@ class PoolBuilder:
 
     @staticmethod
     def _family_pool_id(family_id: str) -> str:
-        leaf = _family_leaf(family_id)
-        return f"{leaf}-family"
+        return f"{family_id}-family"
 
     @staticmethod
     def _axis_key(candidate: _Candidate, axis: str) -> tuple[object, ...]:

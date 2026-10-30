@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -32,7 +34,7 @@ def _decision(**overrides: object) -> RouteDecision:
 
 
 @pytest.fixture
-def store(tmp_path) -> RouteDecisionStore:
+def store(tmp_path: Path) -> Generator[RouteDecisionStore, None, None]:
     decision_store = RouteDecisionStore(str(tmp_path / "routing.db"))
     decision_store.initialize()
     try:
@@ -103,6 +105,18 @@ def test_list_decisions_filters_by_policy_and_selection(store: RouteDecisionStor
     assert [d.id for d in store.list_decisions(limit=2)] == [balanced.id, cost_first.id]
 
 
+def test_list_decisions_applies_explored_filter_before_limit(store: RouteDecisionStore) -> None:
+    normal = _decision()
+    second_normal = _decision()
+    explored = _decision(explored=True)
+    for decision in (normal, second_normal, explored):
+        store.save_decision(decision)
+
+    assert [d.id for d in store.list_decisions(explored=True, limit=1)] == [explored.id]
+    assert store.list_decisions(explored=True, limit=0) == []
+    assert [d.id for d in store.list_decisions(explored=False, limit=None)] == [normal.id, second_normal.id]
+
+
 def test_list_decisions_orders_oldest_first(store: RouteDecisionStore) -> None:
     early = _decision()
     late = _decision()
@@ -124,7 +138,7 @@ def test_negative_limit_is_rejected(store: RouteDecisionStore) -> None:
         store.list_decisions(limit=-1)
 
 
-def test_count_and_reinitialize(store: RouteDecisionStore, tmp_path) -> None:
+def test_count_and_reinitialize(store: RouteDecisionStore, tmp_path: Path) -> None:
     store.save_decision(_decision())
     assert store.count_decisions() == 1
 

@@ -785,7 +785,7 @@ The platform creates default profiles after provider and model synchronization:
 | Reviewer | code analysis, reasoning, structured output | quality-first and stable |
 | Researcher | tool calling, search or browsing support, long context | reliable and availability-aware |
 
-Pools are generated from rules rather than manually maintained lists. Examples include `tool_calling`, `luna-family`, `large_context_reasoning`, and `planner-quality`.
+Pools are generated from rules rather than manually maintained lists. Examples include `tool_calling`, `openai/luna-family`, `large_context_reasoning`, and `planner-quality`.
 
 ## OmniRoute Integration Boundary
 

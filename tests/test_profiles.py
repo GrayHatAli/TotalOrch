@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from total_orch.domain import (
@@ -90,7 +92,7 @@ def _variant(
         name=name,
         display_name=display_name,
         context_window=context_window,
-        capabilities=ModelCapabilities(**capabilities),
+        capabilities=ModelCapabilities(**cast(Any, capabilities)),
     )
 
 
@@ -111,7 +113,7 @@ def _endpoint(
         provider_model_name=provider_model_name,
         model_variant_id=variant_id,
         connection=_connection(provider),
-        capabilities=ModelCapabilities(**capabilities),
+        capabilities=ModelCapabilities(**cast(Any, capabilities)),
         health=health,
         latency_p95_ms=latency_p95_ms,
         input_cost_per_million=input_cost_per_million,
@@ -263,13 +265,63 @@ def test_capability_pool_members_are_health_ordered() -> None:
 
 def test_family_pools_cover_every_family_with_endpoints() -> None:
     builds = _builds_by_id(_default_builder().build())
-    assert _members(builds["luna-family"].pool) == [A, B]
-    assert _members(builds["nova-family"].pool) == [C, D]
-    assert _members(builds["ferret-family"].pool) == [F]
+    assert _members(builds["openai/luna-family"].pool) == [A, B]
+    assert _members(builds["openai/nova-family"].pool) == [C, D]
+    assert _members(builds["openai/ferret-family"].pool) == [F]
 
-    memberships = {m.endpoint_id: m for m in builds["luna-family"].memberships}
+    memberships = {m.endpoint_id: m for m in builds["openai/luna-family"].memberships}
     assert memberships[A].reason == "serves a variant of the openai/luna family"
     assert memberships[C].reason == "serves a variant of openai/nova, not openai/luna"
+
+
+def test_family_pool_ids_include_the_canonical_family_id() -> None:
+    openai_variant = _variant(
+        "openai/shared:one",
+        "openai/shared",
+        "one",
+        context_window=64_000,
+    )
+    meta_variant = _variant(
+        "meta/shared:two",
+        "meta/shared",
+        "two",
+        context_window=64_000,
+    )
+    openai_endpoint = _endpoint(
+        "provider-a/one",
+        openai_variant.id,
+        health=0.9,
+        latency_p95_ms=100,
+        input_cost_per_million=1.0,
+        output_cost_per_million=1.0,
+    )
+    meta_endpoint = _endpoint(
+        "provider-b/two",
+        meta_variant.id,
+        health=0.8,
+        latency_p95_ms=100,
+        input_cost_per_million=1.0,
+        output_cost_per_million=1.0,
+    )
+    builder = PoolBuilder(
+        _FakeRegistry(
+            families=[ModelFamily(id="openai/shared"), ModelFamily(id="meta/shared")],
+            variants=[openai_variant, meta_variant],
+            endpoints=[openai_endpoint, meta_endpoint],
+        )
+    )
+
+    builds = _builds_by_id(
+        builder.build(
+            {
+                "openai/shared-family": PoolOverrides(pinned=(openai_endpoint.id,)),
+                "meta/shared-family": PoolOverrides(pinned=(meta_endpoint.id,)),
+            }
+        )
+    )
+
+    assert _members(builds["openai/shared-family"].pool) == [openai_endpoint.id]
+    assert _members(builds["meta/shared-family"].pool) == [meta_endpoint.id]
 
 
 # -- role pools (MVP-0405, 0411) --------------------------------------------
@@ -389,9 +441,9 @@ def test_pinning_restricts_pool_to_pinned_endpoints() -> None:
 
 def test_pinning_a_variant_pins_all_its_endpoints() -> None:
     builds = _default_builder().build(
-        {"luna-family": PoolOverrides(pinned=(LUNA,))}
+        {"openai/luna-family": PoolOverrides(pinned=(LUNA,))}
     )
-    family = _builds_by_id(builds)["luna-family"]
+    family = _builds_by_id(builds)["openai/luna-family"]
     assert _members(family.pool) == [A, B]
     assert all(m.member for m in family.memberships if m.endpoint_id in (A, B))
 

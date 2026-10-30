@@ -6,6 +6,8 @@ payloads so expectations never depend on a live catalog.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from total_orch.domain import ProviderConnectionRef
@@ -55,7 +57,7 @@ async def test_omniroute_ingestion_groups_serving_providers_onto_one_variant() -
     assert len(batch.variants) == 2
     assert len(batch.endpoints) == 2
     assert {observation.variant_id for observation in batch.variants} == {"openai/luna:luna-5.6-pro"}
-    assert {observation.endpoint.id for observation in batch.endpoints} == {
+    assert {observation.endpoint.id for observation in batch.endpoints if observation.endpoint is not None} == {
         "provider-a/luna-5.6-pro",
         "provider-b/luna-5.6-pro",
     }
@@ -75,7 +77,9 @@ async def test_omniroute_ingestion_groups_serving_providers_onto_one_variant() -
         and observation.fields["cap.reasoning"].value is True
     )
     assert reasoning.fields["cap.available_efforts"].value == ("high", "low")
-    assert all(observation.endpoint.connection is not None for observation in batch.endpoints)
+    for observation in batch.endpoints:
+        assert observation.endpoint is not None
+        assert observation.endpoint.connection is not None
 
 
 @pytest.mark.asyncio
@@ -89,6 +93,7 @@ async def test_omniroute_preserves_publisher_prefixes_from_aggregators() -> None
     batch = await source.fetch()
 
     endpoint = batch.endpoints[0]
+    assert endpoint.endpoint is not None
     assert endpoint.endpoint.provider == "openrouter"
     assert endpoint.endpoint.provider_model_name == "openai/gpt-4o"
     assert endpoint.endpoint.model_variant_id == "openai/gpt-4o:gpt-4o"
@@ -140,7 +145,7 @@ MODELS_DEV_PAYLOAD = [
 
 
 @pytest.mark.asyncio
-async def test_modelsdev_ingestion_claims_stated_facts_only(transport_factory) -> None:
+async def test_modelsdev_ingestion_claims_stated_facts_only(transport_factory: Any) -> None:
     source = ModelsDevCatalogSource(
         "https://models.dev",
         IdentityRules(),
@@ -164,6 +169,7 @@ async def test_modelsdev_ingestion_claims_stated_facts_only(transport_factory) -
     assert gpt4o.fields["cap.available_efforts"].value == ("low", "high")
 
     pricing = batch.endpoints[0]
+    assert pricing.endpoint is not None
     assert pricing.endpoint.id == "openai/gpt-4o"
     assert pricing.fields["input_cost_per_million"].value == 2.5
     assert pricing.fields["output_cost_per_million"].value == 10.0
@@ -179,7 +185,7 @@ async def test_modelsdev_ingestion_claims_stated_facts_only(transport_factory) -
 
 
 @pytest.mark.asyncio
-async def test_modelsdev_http_failure_raises(transport_factory) -> None:
+async def test_modelsdev_http_failure_raises(transport_factory: Any) -> None:
     source = ModelsDevCatalogSource(
         "https://models.dev",
         IdentityRules(),
@@ -213,7 +219,7 @@ OPENROUTER_PAYLOAD = {
 
 
 @pytest.mark.asyncio
-async def test_openrouter_ingestion_claims_explicit_modalities_and_limits(transport_factory) -> None:
+async def test_openrouter_ingestion_claims_explicit_modalities_and_limits(transport_factory: Any) -> None:
     transport = transport_factory(data=OPENROUTER_PAYLOAD)
     source = OpenRouterCatalogSource(
         "https://openrouter.ai",
@@ -240,5 +246,6 @@ async def test_openrouter_ingestion_claims_explicit_modalities_and_limits(transp
 
     assert len(batch.endpoints) == 1
     pricing = batch.endpoints[0]
+    assert pricing.endpoint is not None
     assert pricing.endpoint.id == "openrouter/openai/gpt-4o"
     assert pricing.fields["input_cost_per_million"].value == 2.5
