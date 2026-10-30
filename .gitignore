@@ -237,3 +237,4 @@ __pycache__/
 
 # Local agent workspace
 .freebuff/
+graphify-out/
