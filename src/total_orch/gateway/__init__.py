@@ -12,7 +12,13 @@ from .errors import GatewayError
 from .events import completion_event, error_event
 from .factory import build_gateway, supported_gateway_types
 from .fake import FakeGatewayAdapter
-from .models import GatewayCompletion, GatewayModel, GatewayRequest, GatewayStreamChunk
+from .models import (
+    GatewayCompletion,
+    GatewayModel,
+    GatewayRequest,
+    GatewayStreamChunk,
+    GatewayToolCall,
+)
 from .omniroute import OmniRouteAdapter
 from .openai_compat import OpenAICompatAdapter
 
@@ -24,6 +30,7 @@ __all__ = [
     "GatewayModel",
     "GatewayRequest",
     "GatewayStreamChunk",
+    "GatewayToolCall",
     "OmniRouteAdapter",
     "OpenAICompatAdapter",
     "build_gateway",

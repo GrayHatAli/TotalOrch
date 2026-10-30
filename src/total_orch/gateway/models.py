@@ -31,6 +31,16 @@ class GatewayRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class GatewayToolCall:
+    """A gateway-neutral tool call without interpreting its arguments."""
+
+    id: str | None = None
+    function_name: str | None = None
+    arguments: str = ""
+    index: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class GatewayCompletion:
     request_id: str | None
     provider: str
@@ -39,6 +49,7 @@ class GatewayCompletion:
     finish_reason: str | None = None
     usage: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    tool_calls: tuple[GatewayToolCall, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +61,7 @@ class GatewayStreamChunk:
     finish_reason: str | None = None
     usage: Mapping[str, Any] = field(default_factory=dict)
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    tool_calls: tuple[GatewayToolCall, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

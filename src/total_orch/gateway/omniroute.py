@@ -28,6 +28,41 @@ from .models import GatewayModel
 
 __all__ = ["AsyncTransport", "HttpResponse", "OmniRouteAdapter"]
 
+_TRUE_STATUS_VALUES = frozenset({"ok", "healthy", "ready", "up", "valid", "true"})
+_FALSE_STATUS_VALUES = frozenset({"error", "failed", "false", "down", "unhealthy", "not_ready", "invalid"})
+
+
+def _status_value(data: Any, *keys: str) -> bool | None:
+    if isinstance(data, bool):
+        return data
+    if not isinstance(data, Mapping):
+        return None
+    for key in keys:
+        if key not in data:
+            continue
+        value = data[key]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower().replace("-", "_")
+            if normalized in _TRUE_STATUS_VALUES:
+                return True
+            if normalized in _FALSE_STATUS_VALUES:
+                return False
+        return None
+    return None
+
+
+def _boolean_value(data: Any, *keys: str) -> bool | None:
+    if isinstance(data, bool):
+        return data
+    if not isinstance(data, Mapping):
+        return None
+    for key in keys:
+        if key in data:
+            return data[key] if isinstance(data[key], bool) else None
+    return None
+
 
 class OmniRouteAdapter(OpenAICompatGatewayAdapter):
     """Adapter for OmniRoute management endpoints and OpenAI-compatible execution."""
@@ -116,21 +151,11 @@ class OmniRouteAdapter(OpenAICompatGatewayAdapter):
     async def validate_connection(self, connection_id: str) -> bool:
         path = f"/api/providers/{quote(connection_id, safe='')}/test"
         response = await self._management_request("POST", path, body={})
-        if isinstance(response.data, Mapping):
-            value = response.data.get("valid", response.data.get("healthy", response.data.get("ok")))
-            if isinstance(value, bool):
-                return value
-        return True
+        return _boolean_value(response.data, "valid", "healthy", "ok") is True
 
     async def health_check(self, provider: str, model: str | None = None) -> bool:
         path = f"/api/providers/{quote(provider, safe='')}/health"
         if model:
             path += f"?model={quote(model, safe='')}"
         response = await self._management_request("GET", path)
-        if isinstance(response.data, Mapping):
-            value = response.data.get("healthy", response.data.get("ok", response.data.get("status")))
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, str):
-                return value.lower() in {"ok", "healthy", "ready", "up"}
-        return True
+        return _status_value(response.data, "healthy", "ok", "status") is True

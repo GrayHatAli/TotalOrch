@@ -59,15 +59,11 @@ class RouteDecisionStore:
         rewritten, so replaying a stored decision keeps the original facts.
         """
 
-        existing = self._connection.execute(
-            "SELECT id FROM route_decisions WHERE id = ?", (str(decision.id),)
-        ).fetchone()
-        if existing is not None:
-            return False
-        self._connection.execute(
+        cursor = self._connection.execute(
             "INSERT INTO route_decisions "
             "(id, request_id, selected_endpoint_id, policy_version, payload, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO NOTHING",
             (
                 str(decision.id),
                 str(decision.request_id),
@@ -78,7 +74,7 @@ class RouteDecisionStore:
             ),
         )
         self._connection.commit()
-        return True
+        return cursor.rowcount == 1
 
     # -- queries -------------------------------------------------------------
 

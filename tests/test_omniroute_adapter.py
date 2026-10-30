@@ -147,3 +147,19 @@ async def test_omniroute_does_not_retry_non_transient_failure() -> None:
 
     assert raised.value.retryable is False
     assert len(transport.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_omniroute_empty_or_unknown_health_status_is_unhealthy() -> None:
+    empty = StubTransport([HttpResponse(200, None, {})])
+    assert await adapter(empty).health_check("provider-a") is False
+
+    unknown = StubTransport([HttpResponse(200, {"status": "maybe"}, {})])
+    assert await adapter(unknown).health_check("provider-a") is False
+
+
+@pytest.mark.asyncio
+async def test_omniroute_empty_validation_status_is_not_valid() -> None:
+    transport = StubTransport([HttpResponse(200, {}, {})])
+
+    assert await adapter(transport).validate_connection("connection-a") is False

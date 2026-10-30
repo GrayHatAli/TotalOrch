@@ -65,6 +65,15 @@ def test_save_is_idempotent_on_decision_id(store: RouteDecisionStore) -> None:
     assert store.get_decision(decision.id) == decision
 
 
+def test_save_duplicate_does_not_replace_first_payload(store: RouteDecisionStore) -> None:
+    decision = _decision(policy_version="first")
+    duplicate = _decision(id=decision.id, policy_version="second")
+
+    assert store.save_decision(decision) is True
+    assert store.save_decision(duplicate) is False
+    assert store.get_decision(decision.id).policy_version == "first"
+
+
 def test_decisions_for_request_returns_all_decisions_of_one_request(store: RouteDecisionStore) -> None:
     first = _decision()
     second = _decision(request_id=first.request_id)

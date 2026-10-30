@@ -97,4 +97,5 @@ class FakeGatewayAdapter(GatewayAdapter):
             finish_reason=response.finish_reason or "stop",
             usage=response.usage,
             metadata=response.metadata,
+            tool_calls=response.tool_calls,
         )

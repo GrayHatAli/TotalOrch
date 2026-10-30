@@ -8,6 +8,22 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
+
+
+def _redact_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    parsed = urlsplit(value)
+    hostname = parsed.hostname or ""
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    try:
+        port = f":{parsed.port}" if parsed.port is not None else ""
+    except ValueError:
+        port = ""
+    netloc = f"{hostname}{port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
 def _int_env(name: str, default: int) -> int:
@@ -90,18 +106,18 @@ class Settings:
             "environment": self.environment,
             "log_level": self.log_level,
             "gateway_type": self.gateway_type,
-            "gateway_base_url": self.gateway_base_url,
+            "gateway_base_url": _redact_url(self.gateway_base_url),
             "gateway_api_key_configured": self.gateway_api_key is not None,
             "gateway_timeout_seconds": self.gateway_timeout_seconds,
             "gateway_max_retries": self.gateway_max_retries,
-            "omniroute_base_url": self.omniroute_base_url,
+            "omniroute_base_url": _redact_url(self.omniroute_base_url),
             "omniroute_api_key_configured": self.omniroute_api_key is not None,
             "omniroute_management_key_configured": self.omniroute_management_key is not None,
             "omniroute_timeout_seconds": self.omniroute_timeout_seconds,
             "omniroute_max_retries": self.omniroute_max_retries,
             "registry_database_path": self.registry_database_path,
             "registry_stale_after_seconds": self.registry_stale_after_seconds,
-            "modelsdev_base_url": self.modelsdev_base_url,
-            "openrouter_base_url": self.openrouter_base_url,
+            "modelsdev_base_url": _redact_url(self.modelsdev_base_url),
+            "openrouter_base_url": _redact_url(self.openrouter_base_url),
             "openrouter_api_key_configured": self.openrouter_api_key is not None,
         }

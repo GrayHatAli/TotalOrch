@@ -9,6 +9,7 @@ import pytest
 from total_orch.domain import ModelVariant, ProviderConnectionRef, SourceProvenance
 from total_orch.gateway import FakeGatewayAdapter, GatewayModel
 from total_orch.registry import (
+    CatalogBatch,
     IdentityRules,
     ModelRegistryService,
     ModelRegistryStore,
@@ -471,6 +472,35 @@ async def test_service_reports_source_failures_without_aborting() -> None:
     failed = next(result for result in summary.sources if result.source == "broken")
     assert failed.error is not None
     assert service.counts().variants >= 1
+
+
+@pytest.mark.asyncio
+async def test_service_reports_entity_errors_as_failed_sync() -> None:
+    store = new_store()
+    rules = IdentityRules()
+
+    class PartiallyBrokenSource:
+        source = "broken-entity"
+
+        async def fetch(self):
+            return CatalogBatch(
+                variants=[variant_observation("models.dev", "openai/bad:bad", context_window="not-an-int")]
+            )
+
+    service = ModelRegistryService(store, rules, sources=[PartiallyBrokenSource()])
+
+    summary = await service.sync()
+
+    assert summary.succeeded is False
+    assert summary.entity_errors == ("variant openai/bad:bad: invalid literal for int() with base 10: 'not-an-int'",)
+
+
+@pytest.mark.asyncio
+async def test_service_with_no_sources_is_not_successful() -> None:
+    summary = await ModelRegistryService(new_store(), IdentityRules()).sync()
+
+    assert summary.sources == ()
+    assert summary.succeeded is False
 
 
 @pytest.mark.asyncio

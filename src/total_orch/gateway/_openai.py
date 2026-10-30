@@ -22,7 +22,13 @@ from total_orch.domain import ProviderConnectionRef
 
 from .base import GatewayAdapter
 from .errors import GatewayError
-from .models import GatewayCompletion, GatewayModel, GatewayRequest, GatewayStreamChunk
+from .models import (
+    GatewayCompletion,
+    GatewayModel,
+    GatewayRequest,
+    GatewayStreamChunk,
+    GatewayToolCall,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,20 +190,44 @@ def safe_metadata(data: Mapping[str, Any]) -> dict[str, Any]:
     return {key: data[key] for key in allowed if key in data}
 
 
+def tool_calls_from_payload(value: Any) -> tuple[GatewayToolCall, ...]:
+    if not isinstance(value, list):
+        return ()
+    calls: list[GatewayToolCall] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        function = item.get("function")
+        if not isinstance(function, Mapping):
+            continue
+        arguments = function.get("arguments")
+        calls.append(
+            GatewayToolCall(
+                id=optional_string(item.get("id")),
+                function_name=optional_string(function.get("name")),
+                arguments=arguments if isinstance(arguments, str) else "",
+                index=item.get("index") if isinstance(item.get("index"), int) else None,
+            )
+        )
+    return tuple(calls)
+
+
 def completion_from_response(data: Any, request: GatewayRequest) -> GatewayCompletion:
     if not isinstance(data, Mapping):
         raise GatewayError("invalid_gateway_response", "gateway returned a non-object response", retryable=False)
     choices = data.get("choices")
     first = choices[0] if isinstance(choices, list) and choices else {}
     message = first.get("message", {}) if isinstance(first, Mapping) else {}
+    message_mapping = message if isinstance(message, Mapping) else {}
     return GatewayCompletion(
         request_id=optional_string(data.get("id")),
         provider=request.provider,
         model=str(data.get("model") or request.target_model),
-        output_text=text_content(message.get("content") if isinstance(message, Mapping) else None),
+        output_text=text_content(message_mapping.get("content")),
         finish_reason=optional_string(first.get("finish_reason") if isinstance(first, Mapping) else None),
         usage=data.get("usage", {}) if isinstance(data.get("usage", {}), Mapping) else {},
         metadata=safe_metadata(data),
+        tool_calls=tool_calls_from_payload(message_mapping.get("tool_calls")),
     )
 
 
@@ -207,14 +237,16 @@ def stream_chunk_from_response(data: Any, request: GatewayRequest) -> GatewayStr
     choices = data.get("choices")
     first = choices[0] if isinstance(choices, list) and choices else {}
     delta = first.get("delta", {}) if isinstance(first, Mapping) else {}
+    delta_mapping = delta if isinstance(delta, Mapping) else {}
     return GatewayStreamChunk(
         request_id=optional_string(data.get("id")),
         provider=request.provider,
         model=str(data.get("model") or request.target_model),
-        delta=text_content(delta.get("content") if isinstance(delta, Mapping) else None),
+        delta=text_content(delta_mapping.get("content")),
         finish_reason=optional_string(first.get("finish_reason") if isinstance(first, Mapping) else None),
         usage=data.get("usage", {}) if isinstance(data.get("usage", {}), Mapping) else {},
         metadata=safe_metadata(data),
+        tool_calls=tool_calls_from_payload(delta_mapping.get("tool_calls")),
     )
 
 
@@ -316,7 +348,14 @@ class OpenAICompatGatewayAdapter(GatewayAdapter):
         return "default"
 
     def _model_from_record(self, record: Mapping[str, Any], default_provider: str | None = None) -> GatewayModel:
-        model_id = str(record.get("id") or record.get("name") or "unknown")
+        raw_model_id = record.get("id") or record.get("name")
+        if not isinstance(raw_model_id, str) or not raw_model_id.strip():
+            raise GatewayError(
+                "invalid_gateway_response",
+                "gateway returned a model without a non-empty id",
+                retryable=False,
+            )
+        model_id = raw_model_id.strip()
         provider = optional_string(record.get("provider") or record.get("provider_id")) or default_provider
         if provider is None and "/" in model_id:
             provider = model_id.split("/", 1)[0]
@@ -385,12 +424,14 @@ class OpenAICompatGatewayAdapter(GatewayAdapter):
         return request.model
 
     def _completions_body(self, request: GatewayRequest, *, stream: bool) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "model": self._request_model(request),
-            "messages": [{"role": message.role, "content": message.content} for message in request.messages],
-            "stream": stream,
-            **dict(request.extra),
-        }
+        body: dict[str, Any] = dict(request.extra)
+        body.update(
+            {
+                "model": self._request_model(request),
+                "messages": [{"role": message.role, "content": message.content} for message in request.messages],
+                "stream": stream,
+            }
+        )
         if request.tools:
             body["tools"] = list(request.tools)
         if request.temperature is not None:

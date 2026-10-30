@@ -30,6 +30,15 @@ def completion_event(
             "finish_reason": completion.finish_reason,
             "usage": dict(completion.usage),
             "gateway_metadata": dict(completion.metadata),
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "function_name": call.function_name,
+                    "arguments": call.arguments,
+                    "index": call.index,
+                }
+                for call in completion.tool_calls
+            ],
         },
     )
 

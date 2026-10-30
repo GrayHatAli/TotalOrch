@@ -8,7 +8,7 @@ Audit baseline: the repository had 134 passing tests, five Ruff errors, and 35
 mypy errors. The expected runtime is multiple workers sharing one deployment,
 with gateway calls and SQLite persistence on the request path.
 
-## [ ] 1. Protect reserved gateway request fields
+## [x] 1. Protect reserved gateway request fields
 
 **Location:** `src/total_orch/gateway/_openai.py:387-399`
 
@@ -41,7 +41,7 @@ Build the provider-specific fields first, then write the canonical fields last:
   value.
 - Keep provider-specific keys such as `user` and `response_format` intact.
 
-## [ ] 2. Preserve tool calls in gateway responses
+## [x] 2. Preserve tool calls in gateway responses
 
 **Locations:** `src/total_orch/gateway/_openai.py:187-217` and
 `src/total_orch/gateway/models.py:34-52`
@@ -72,7 +72,7 @@ Add a small normalized representation for tool calls:
 - `completion_event` does not silently drop the normalized calls if events are
   the next consumer.
 
-## [ ] 3. Reject malformed successful gateway responses
+## [x] 3. Reject malformed successful gateway responses
 
 **Locations:** `src/total_orch/gateway/omniroute.py:116-136` and
 `src/total_orch/gateway/_openai.py:155-165`
@@ -103,7 +103,7 @@ Validate the response shape at the adapter boundary:
 - Valid `healthy`, `ok`, and recognized status strings still work.
 - A malformed catalog response is reported to the registry sync as an error.
 
-## [ ] 4. Make redacted settings safe for URLs containing secrets
+## [x] 4. Make redacted settings safe for URLs containing secrets
 
 **Location:** `src/total_orch/config.py:86-105`
 
@@ -131,7 +131,7 @@ Add one small URL-redaction helper in `config.py`:
 - API keys in the dedicated key fields remain represented only by their
   configured booleans.
 
-## [ ] 5. Report partial registry syncs as failures
+## [x] 5. Report partial registry syncs as failures
 
 **Locations:** `src/total_orch/registry/service.py:59-71` and
 `src/total_orch/registry/service.py:122-142`
@@ -161,7 +161,7 @@ Make success reflect the whole pass:
 - An empty source list is not reported as a successful sync.
 - Valid entities from the same pass remain queryable.
 
-## [ ] 6. Make decision persistence idempotent across workers
+## [x] 6. Make decision persistence idempotent across workers
 
 **Location:** `src/total_orch/router/store.py:55-81`
 

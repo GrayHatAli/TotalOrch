@@ -22,7 +22,8 @@ from total_orch.gateway import (
     supported_gateway_types,
 )
 from total_orch.gateway.errors import GatewayError
-from total_orch.gateway.models import ChatMessage
+from total_orch.gateway.events import completion_event
+from total_orch.gateway.models import ChatMessage, GatewayToolCall
 from total_orch.gateway.omniroute import HttpResponse
 
 
@@ -86,6 +87,75 @@ async def test_openai_compat_sends_catalog_id_verbatim() -> None:
     # No provider prefixing: One API / New API / FreeLLMAPI style channels.
     assert transport.calls[0][2]["model"] == "openai/gpt-4o"
     assert transport.calls[0][1] == "http://router.test/v1/chat/completions"
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_typed_request_fields_override_extra() -> None:
+    transport = StubTransport([HttpResponse(200, {"choices": [{"message": {"content": "ok"}}]}, {})])
+    adapter = OpenAICompatAdapter(base_url="http://router.test", transport=transport)
+    request_with_conflicts = GatewayRequest(
+        provider="openai",
+        model="gpt-4o",
+        messages=(ChatMessage(role="user", content="canonical"),),
+        extra={
+            "model": "wrong-model",
+            "messages": [{"role": "user", "content": "wrong"}],
+            "stream": True,
+            "user": "keep-me",
+            "response_format": {"type": "json_object"},
+        },
+    )
+
+    await adapter.complete(request_with_conflicts)
+
+    body = transport.calls[0][2]
+    assert body is not None
+    assert body["model"] == "gpt-4o"
+    assert body["messages"] == [{"role": "user", "content": "canonical"}]
+    assert body["stream"] is False
+    assert body["user"] == "keep-me"
+    assert body["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_preserves_tool_calls_and_completion_events() -> None:
+    transport = StubTransport(
+        [
+            HttpResponse(
+                200,
+                {
+                    "id": "req-tool",
+                    "choices": [
+                        {
+                            "message": {
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": "call-1",
+                                        "type": "function",
+                                        "function": {"name": "lookup", "arguments": '{"q":"x"}'},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+                {},
+            )
+        ]
+    )
+    adapter = OpenAICompatAdapter(base_url="http://router.test", transport=transport)
+
+    result = await adapter.complete(request())
+    expected = GatewayToolCall(id="call-1", function_name="lookup", arguments='{"q":"x"}')
+
+    assert result.output_text == ""
+    assert result.tool_calls == (expected,)
+    event = completion_event(result, workflow_id="workflow-1", task_id="task-1")
+    assert event.metadata["tool_calls"] == [
+        {"id": "call-1", "function_name": "lookup", "arguments": '{"q":"x"}', "index": None}
+    ]
 
 
 @pytest.mark.asyncio
@@ -168,6 +238,28 @@ async def test_openai_compat_normalizes_streaming_sse() -> None:
     assert chunks[1].finish_reason == "stop"
 
 
+@pytest.mark.asyncio
+async def test_openai_compat_normalizes_streaming_tool_calls() -> None:
+    transport = StubTransport(
+        [],
+        [
+            'data: {"id":"req-tool","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":"{\\"q\\":"}}]}}]}',
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"x\\"}"}}]}}]}',
+            "data: [DONE]",
+        ],
+    )
+    adapter = OpenAICompatAdapter(base_url="http://router.test", transport=transport)
+
+    chunks = [chunk async for chunk in adapter.stream(request())]
+
+    assert chunks[0].tool_calls == (
+        GatewayToolCall(id="call-1", function_name="lookup", arguments='{"q":', index=0),
+    )
+    assert chunks[1].tool_calls == (
+        GatewayToolCall(arguments='"x"}', index=0),
+    )
+
+
 # -- discovery over the generic surface ----------------------------------------
 
 
@@ -210,6 +302,19 @@ async def test_openai_compat_health_check_false_on_gateway_error() -> None:
     adapter = OpenAICompatAdapter(base_url="http://router.test", transport=transport)
 
     assert await adapter.health_check("openai") is False
+
+
+@pytest.mark.asyncio
+async def test_openai_compat_rejects_catalog_records_without_ids() -> None:
+    adapter = OpenAICompatAdapter(
+        base_url="http://router.test",
+        transport=StubTransport([HttpResponse(200, {"data": [{"display_name": "missing-id"}]}, {})]),
+    )
+
+    with pytest.raises(GatewayError) as raised:
+        await adapter.list_models()
+
+    assert raised.value.code == "invalid_gateway_response"
 
 
 # -- router defaults and factory ------------------------------------------------

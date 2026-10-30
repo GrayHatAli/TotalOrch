@@ -68,7 +68,7 @@ class SyncSummary:
 
     @property
     def succeeded(self) -> bool:
-        return all(result.status == "ok" for result in self.sources)
+        return bool(self.sources) and all(result.status == "ok" for result in self.sources) and not self.entity_errors
 
 
 @dataclass(frozen=True, slots=True)
