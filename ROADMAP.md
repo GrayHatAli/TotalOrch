@@ -29,7 +29,7 @@ boundaries; none is the source of truth for the TotalOrch domain model.
   - [ ] Add import/export with secret redaction and explicit confirmation for credential-bearing data.
 
 - [ ] Phase 3 — Build the canonical model registry service
-  - [ ] Add a registry sync coordinator for provider adapters and public metadata sources.
+  - [x] Add a registry sync coordinator for provider adapters and public metadata sources.
   - [ ] Normalize model IDs, aliases, context limits, capabilities, pricing, and lifecycle state.
   - [ ] Make the registry the routing source of truth instead of a live router catalog.
   - [ ] Add manual overrides and safe conflict resolution.

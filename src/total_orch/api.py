@@ -20,7 +20,12 @@ from total_orch.config import Settings
 from total_orch.domain import ProviderConnection
 from total_orch.gateway import GatewayAdapter, GatewayError, GatewayRequest, build_gateway
 from total_orch.gateway.models import ChatMessage
-from total_orch.registry import IdentityRules, ModelRegistryService, ModelRegistryStore
+from total_orch.registry import (
+    IdentityRules,
+    ModelRegistryService,
+    ModelRegistryStore,
+    ModelsEndpointCatalogSource,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +73,8 @@ class TotalOrchApplication:
         try:
             if method == "GET" and path in {"/v1/registry/counts", "/v1/registry/models", "/v1/models"}:
                 return self._registry_response(path, parse_qs(parsed.query))
+            if method == "POST" and path == "/v1/registry/sync":
+                return self._sync_registry()
             if method == "GET" and path == "/v1/providers/connections":
                 return self._connections_response(parse_qs(parsed.query))
             if method == "POST" and path == "/v1/providers/connections":
@@ -112,6 +119,27 @@ class TotalOrchApplication:
                     for variant in variants
                 ],
                 "endpoints": [self._public_endpoint(endpoint) for endpoint in endpoints],
+            },
+        )
+
+    def _sync_registry(self) -> ApiResponse:
+        summary = asyncio.run(self.registry.sync())
+        return ApiResponse(
+            HTTPStatus.OK,
+            {
+                "succeeded": summary.succeeded,
+                "sources": [
+                    {
+                        "source": result.source,
+                        "status": result.status,
+                        "families": result.families,
+                        "variants": result.variants,
+                        "endpoints": result.endpoints,
+                        "error": result.error,
+                    }
+                    for result in summary.sources
+                ],
+                "counts": self._counts(),
             },
         )
 
@@ -289,8 +317,10 @@ def create_application(settings: Settings | None = None) -> TotalOrchApplication
         raise ValueError("TOTAL_ORCH_API_KEY is required outside development and test environments")
     store = ModelRegistryStore(settings.registry_database_path)
     store.initialize()
-    registry = ModelRegistryService(store, IdentityRules())
-    return TotalOrchApplication(settings, registry, build_gateway(settings))
+    rules = IdentityRules()
+    gateway = build_gateway(settings)
+    registry = ModelRegistryService(store, rules, sources=(ModelsEndpointCatalogSource(gateway, rules),))
+    return TotalOrchApplication(settings, registry, gateway)
 
 
 def main() -> None:

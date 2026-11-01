@@ -4,7 +4,12 @@ from total_orch.api import TotalOrchApplication
 from total_orch.config import Settings
 from total_orch.domain import ProviderConnectionRef
 from total_orch.gateway import FakeGatewayAdapter, GatewayCompletion
-from total_orch.registry import IdentityRules, ModelRegistryService, ModelRegistryStore
+from total_orch.registry import (
+    IdentityRules,
+    ModelRegistryService,
+    ModelRegistryStore,
+    ModelsEndpointCatalogSource,
+)
 
 
 def application() -> TotalOrchApplication:
@@ -24,9 +29,10 @@ def application() -> TotalOrchApplication:
             finish_reason="stop",
         ),
     )
+    rules = IdentityRules()
     return TotalOrchApplication(
         Settings(environment="test", total_orch_api_key="totalorch-test"),
-        ModelRegistryService(store, IdentityRules()),
+        ModelRegistryService(store, rules, sources=(ModelsEndpointCatalogSource(gateway, rules),)),
         gateway,
     )
 
@@ -40,6 +46,19 @@ def test_health_is_public_but_management_routes_require_total_orch_key() -> None
     assert health.status_code == 200
     assert health.body["status"] == "ok"
     assert denied.status_code == 401
+
+
+def test_registry_sync_is_exposed_without_using_gateway_management_apis() -> None:
+    app = application()
+    response = app.handle(
+        "POST",
+        "/v1/registry/sync",
+        headers={"Authorization": "Bearer totalorch-test"},
+    )
+
+    assert response.status_code == 200
+    assert response.body["succeeded"] is True
+    assert response.body["sources"][0]["source"] == "models_endpoint"
 
 
 def test_connection_api_stores_only_secret_reference_and_redacts_it_from_response() -> None:
