@@ -47,6 +47,7 @@ boundaries; none is the source of truth for the TotalOrch domain model.
   - [x] Add a health endpoint and a documented application entrypoint.
   - [x] Add an OpenAI-compatible request facade for Harness clients.
   - [x] Authenticate Harness requests with a configured TotalOrch API key.
+  - [x] Issue and revoke TotalOrch API keys without storing raw tokens.
   - [ ] Route requests through the canonical registry and record explainable decisions.
   - [ ] Keep Provider credentials and backend-specific management APIs private.
 

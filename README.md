@@ -42,6 +42,8 @@ environments. The API provides:
   alias `GET /v1/models`
 - `POST /v1/registry/sync` to refresh the local registry from the configured
   gateway's standard models endpoint
+- `POST`, `GET`, and `DELETE /v1/auth/keys` to issue, list, and revoke
+  TotalOrch API keys; newly issued tokens are returned only once
 - `GET`, `POST`, and `DELETE /v1/providers/connections`
 - `POST /v1/providers/connections/{id}/health`
 - `POST /v1/chat/completions` as the first non-streaming OpenAI-compatible

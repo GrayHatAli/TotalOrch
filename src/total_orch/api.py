@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import hmac
 import json
+import secrets
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -75,6 +77,15 @@ class TotalOrchApplication:
                 return self._registry_response(path, parse_qs(parsed.query))
             if method == "POST" and path == "/v1/registry/sync":
                 return self._sync_registry()
+            if method == "GET" and path == "/v1/auth/keys":
+                return ApiResponse(HTTPStatus.OK, {"data": self.registry.store.list_api_keys()})
+            if method == "POST" and path == "/v1/auth/keys":
+                return self._create_api_key(body)
+            if method == "DELETE" and path.startswith("/v1/auth/keys/"):
+                key_id = unquote(path.rsplit("/", 1)[-1])
+                if not self.registry.store.revoke_api_key(key_id):
+                    return ApiResponse(HTTPStatus.NOT_FOUND, {"error": {"message": "API key not found"}})
+                return ApiResponse(HTTPStatus.NO_CONTENT, {})
             if method == "GET" and path == "/v1/providers/connections":
                 return self._connections_response(parse_qs(parsed.query))
             if method == "POST" and path == "/v1/providers/connections":
@@ -95,7 +106,12 @@ class TotalOrchApplication:
         if expected is None:
             return self.settings.environment.lower() in {"development", "test"}
         scheme, _, token = headers.get("authorization", "").partition(" ")
-        return scheme.lower() == "bearer" and hmac.compare_digest(token, expected)
+        if scheme.lower() != "bearer" or not token:
+            return False
+        if hmac.compare_digest(token, expected):
+            return True
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return self.registry.store.has_active_api_key(token_hash)
 
     def _registry_response(self, path: str, query: Mapping[str, list[str]]) -> ApiResponse:
         if path.endswith("/counts"):
@@ -189,6 +205,27 @@ class TotalOrchApplication:
         )
         self.registry.store.upsert_connection(updated)
         return ApiResponse(HTTPStatus.OK, {"data": self._public_connection(updated)})
+
+    def _create_api_key(self, body: bytes) -> ApiResponse:
+        payload = self._json_object(body) if body else {}
+        label = payload.get("label", "Harness")
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("label must be a non-empty string")
+        token = f"to_{secrets.token_urlsafe(32)}"
+        key_id = f"key-{uuid4().hex[:12]}"
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        self.registry.store.create_api_key(key_id, label.strip(), token_hash)
+        return ApiResponse(
+            HTTPStatus.CREATED,
+            {
+                "data": {
+                    "id": key_id,
+                    "label": label.strip(),
+                    "token": token,
+                    "warning": "Store this token now; it will not be returned again.",
+                }
+            },
+        )
 
     def _completion(self, body: bytes) -> ApiResponse:
         payload = self._json_object(body)

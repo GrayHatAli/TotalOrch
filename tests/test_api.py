@@ -48,6 +48,36 @@ def test_health_is_public_but_management_routes_require_total_orch_key() -> None
     assert denied.status_code == 401
 
 
+def test_total_orch_can_issue_and_revoke_a_harness_api_key() -> None:
+    app = application()
+    bootstrap = {"Authorization": "Bearer totalorch-test"}
+    created = app.handle(
+        "POST",
+        "/v1/auth/keys",
+        headers=bootstrap,
+        body=json.dumps({"label": "Harness local"}).encode(),
+    )
+    token = created.body["data"]["token"]
+    issued_headers = {"Authorization": f"Bearer {token}"}
+
+    authorized = app.handle("GET", "/v1/models", headers=issued_headers)
+    listed = app.handle("GET", "/v1/auth/keys", headers=bootstrap)
+    revoked = app.handle(
+        "DELETE",
+        f"/v1/auth/keys/{created.body['data']['id']}",
+        headers=bootstrap,
+    )
+    denied_after_revoke = app.handle("GET", "/v1/models", headers=issued_headers)
+
+    assert created.status_code == 201
+    assert token.startswith("to_")
+    assert authorized.status_code == 200
+    assert listed.body["data"][0]["id"] == created.body["data"]["id"]
+    assert "token" not in json.dumps(listed.body)
+    assert revoked.status_code == 204
+    assert denied_after_revoke.status_code == 401
+
+
 def test_registry_sync_is_exposed_without_using_gateway_management_apis() -> None:
     app = application()
     response = app.handle(

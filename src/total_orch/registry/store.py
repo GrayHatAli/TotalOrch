@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS provider_connections (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_provider_connections_provider ON provider_connections(provider);
+CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT
+);
 CREATE TABLE IF NOT EXISTS field_provenance (
     entity_kind TEXT NOT NULL,
     entity_id TEXT NOT NULL,
@@ -338,6 +345,44 @@ class ModelRegistryStore:
     def delete_connection(self, connection_id: str) -> bool:
         cursor = self._connection.execute(
             "DELETE FROM provider_connections WHERE id = ?", (connection_id,)
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    # -- TotalOrch API keys -------------------------------------------------
+
+    def create_api_key(self, key_id: str, label: str, token_hash: str) -> None:
+        self._connection.execute(
+            "INSERT INTO api_keys (id, label, token_hash, created_at) VALUES (?, ?, ?, ?)",
+            (key_id, label, token_hash, _utc_iso()),
+        )
+        self._connection.commit()
+
+    def has_active_api_key(self, token_hash: str) -> bool:
+        row = self._connection.execute(
+            "SELECT 1 FROM api_keys WHERE token_hash = ? AND revoked_at IS NULL",
+            (token_hash,),
+        ).fetchone()
+        return row is not None
+
+    def list_api_keys(self) -> list[dict[str, str | None]]:
+        rows = self._connection.execute(
+            "SELECT id, label, created_at, revoked_at FROM api_keys ORDER BY created_at, id"
+        ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "label": str(row["label"]),
+                "created_at": str(row["created_at"]),
+                "revoked_at": str(row["revoked_at"]) if row["revoked_at"] is not None else None,
+            }
+            for row in rows
+        ]
+
+    def revoke_api_key(self, key_id: str) -> bool:
+        cursor = self._connection.execute(
+            "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (_utc_iso(), key_id),
         )
         self._connection.commit()
         return cursor.rowcount > 0
