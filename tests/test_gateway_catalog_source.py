@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from tests.test_openai_compat_gateway import StubTransport, responses
+from total_orch.domain import ModelKind
 from total_orch.gateway import GatewayAdapter, GatewayModel, OpenAICompatAdapter
 from total_orch.gateway.omniroute import HttpResponse
 from total_orch.registry import GatewayCatalogSource, IdentityRules, ModelsEndpointCatalogSource
@@ -129,3 +130,30 @@ async def test_models_endpoint_source_does_not_require_management_api() -> None:
     adapter.list_models.assert_awaited_once_with()
     adapter.list_connections.assert_not_awaited()
     adapter.list_provider_models.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_models_endpoint_classifies_virtual_automatic_alias_and_concrete_entries() -> None:
+    adapter = Mock(spec=GatewayAdapter)
+    adapter.list_models = AsyncMock(
+        return_value=(
+            GatewayModel(id="auto/best-coding", provider="auto"),
+            GatewayModel(id="virtual/fast", provider="router", metadata={"virtual": True}),
+            GatewayModel(id="alias/coding", provider="router", metadata={"alias_of": "openai/gpt-4o"}),
+            GatewayModel(id="openai/gpt-4o", provider="openai"),
+        )
+    )
+
+    batch = await ModelsEndpointCatalogSource(adapter, IdentityRules()).fetch()
+
+    kinds = {
+        observation.variant_id: observation.fields["model_kind"].value
+        for observation in batch.variants
+        if observation.fields.get("model_kind") is not None
+    }
+    assert kinds == {
+        "best-coding:best-coding": ModelKind.automatic,
+        "virtual/fast:virtual/fast": ModelKind.virtual,
+        "alias/coding:alias/coding": ModelKind.alias,
+        "openai/gpt-4o:gpt-4o": ModelKind.concrete,
+    }

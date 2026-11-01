@@ -68,6 +68,13 @@ class ProviderConnection(Contract):
 ReasoningEffort = Literal["low", "medium", "high", "ultra"]
 
 
+class ModelKind(StrEnum):
+    concrete = "concrete"
+    alias = "alias"
+    automatic = "automatic"
+    virtual = "virtual"
+
+
 class ModelCapabilities(Contract):
     tool_calling: bool | None = None
     reasoning: bool | None = None
@@ -107,6 +114,7 @@ class ModelVariant(Contract):
     description: str | None = None
     context_window: int | None = Field(default=None, gt=0)
     max_output_tokens: int | None = Field(default=None, gt=0)
+    model_kind: ModelKind | None = None
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
     provenance: tuple[SourceProvenance, ...] = ()
     schema_version: int = Field(default=1, ge=1)

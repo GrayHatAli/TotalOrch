@@ -103,6 +103,7 @@ class TotalOrchApplication:
                         "object": "model",
                         "owned_by": self._family_publisher(families, variant.family_id),
                         "context_window": variant.context_window,
+                        "model_kind": variant.model_kind.value if variant.model_kind is not None else None,
                     }
                     for variant in variants
                 ],

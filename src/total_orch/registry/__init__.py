@@ -6,6 +6,7 @@ family/variant records with per-field provenance, then persisted to SQLite so
 routing never blocks on a live external catalog request.
 """
 
+from .gateway_source import classify_model
 from .http import CatalogResponse, CatalogTransport, default_transport
 from .identity import (
     KNOWN_PUBLISHERS,
@@ -84,6 +85,7 @@ __all__ = [
     "assemble_variant",
     "capability_fields",
     "claimed",
+    "classify_model",
     "default_transport",
     "endpoint_id",
     "merge_fields",

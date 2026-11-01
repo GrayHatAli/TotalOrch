@@ -21,6 +21,10 @@ This path does not require a gateway management API or management credential;
 management-aware sources remain available when a gateway exposes richer
 Provider health and connection metadata.
 
+Catalog variants retain a separate canonical identity and are classified as
+`concrete`, `alias`, `automatic`, or `virtual` when the gateway exposes those
+facts. Provider model names remain endpoint-level serving names.
+
 ## Public API and provider credentials
 
 Install the package and run the dependency-free HTTP API with:

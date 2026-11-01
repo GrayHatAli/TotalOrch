@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from total_orch.domain import ModelCapabilities, ProviderConnectionRef
+from total_orch.domain import ModelCapabilities, ModelKind, ProviderConnectionRef
 from total_orch.gateway import GatewayAdapter, GatewayModel
 
 from .identity import IdentityRules, strip_qualifier
@@ -96,6 +96,7 @@ class GatewayCatalogSource:
 
         capabilities = normalize_capability_flags(model.capabilities)
         variant_fields: dict[str, FieldValue] = {}
+        variant_fields["model_kind"] = claimed(classify_model(model, connection.provider), self.source)
         if model.context_window is not None and model.context_window > 0:
             variant_fields["context_window"] = claimed(model.context_window, self.source)
 
@@ -111,3 +112,22 @@ class GatewayCatalogSource:
             VariantObservation(source=self.source, fields=variant_fields, variant_id=identity.variant_id),
             EndpointObservation(source=self.source, fields=capabilities_claims, endpoint=endpoint_ref),
         )
+
+
+def classify_model(model: GatewayModel, provider: str | None = None) -> ModelKind:
+    """Classify explicit gateway metadata, with one conservative auto rule."""
+
+    metadata = model.metadata
+    raw_kind = metadata.get("model_kind") or metadata.get("kind")
+    if isinstance(raw_kind, str):
+        try:
+            return ModelKind(raw_kind.strip().lower())
+        except ValueError:
+            pass
+    if metadata.get("alias_of") or metadata.get("alias") is True:
+        return ModelKind.alias
+    if metadata.get("virtual") is True:
+        return ModelKind.virtual
+    if metadata.get("automatic") is True or provider == "auto":
+        return ModelKind.automatic
+    return ModelKind.concrete

@@ -15,8 +15,8 @@ boundaries; none is the source of truth for the TotalOrch domain model.
 - [ ] Phase 1 — Make the catalog registry independent of gateway management APIs
   - [x] Ingest standard `/v1/models` catalogs without requiring provider-management endpoints.
   - [x] Derive a stable serving-provider reference from explicit provider metadata or model IDs.
-  - [ ] Keep canonical family/variant identity separate from provider model names and aliases.
-  - [ ] Classify virtual, automatic, alias, and concrete model entries.
+  - [x] Keep canonical family/variant identity separate from provider model names and aliases.
+  - [x] Classify virtual, automatic, alias, and concrete model entries.
   - [ ] Preserve per-field provenance, freshness, and source conflict behavior.
   - [ ] Add live-sync diagnostics that distinguish catalog, authentication, and provider failures.
 

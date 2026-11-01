@@ -27,6 +27,7 @@ from typing import Any, cast
 from total_orch.domain import (
     ModelCapabilities,
     ModelFamily,
+    ModelKind,
     ModelVariant,
     ProviderConnectionRef,
     ProviderEndpoint,
@@ -52,6 +53,7 @@ FIELD_AUTHORITY: Mapping[str, tuple[str, ...]] = {
     "description": ("models.dev", "openrouter", "omniroute"),
     "context_window": ("openrouter", "models.dev", "omniroute"),
     "max_output_tokens": ("openrouter", "models.dev", "omniroute"),
+    "model_kind": ("config", "models.dev", "openrouter", "omniroute", "models_endpoint"),
     "cap.tool_calling": ("models.dev", "openrouter", "omniroute"),
     "cap.reasoning": ("models.dev", "openrouter", "omniroute"),
     "cap.structured_output": ("models.dev", "openrouter", "omniroute"),
@@ -221,6 +223,13 @@ def assemble_variant(
     max_output = merged.get("max_output_tokens")
     display = merged.get("display_name")
     description = merged.get("description")
+    model_kind_claim = merged.get("model_kind")
+    model_kind: ModelKind | None = None
+    if model_kind_claim is not None:
+        try:
+            model_kind = ModelKind(str(model_kind_claim.value))
+        except ValueError:
+            model_kind = None
     record = ModelVariant(
         id=variant_id,
         family_id=family_id,
@@ -229,6 +238,7 @@ def assemble_variant(
         description=str(description.value) if description is not None else None,
         context_window=_int_value(context.value) if context is not None else None,
         max_output_tokens=_int_value(max_output.value) if max_output is not None else None,
+        model_kind=model_kind,
         capabilities=capabilities_from_fields(merged),
         provenance=observing_provenance(observations),
     )

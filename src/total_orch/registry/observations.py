@@ -33,6 +33,7 @@ VariantField = Literal[
     "display_name",
     "context_window",
     "max_output_tokens",
+    "model_kind",
     CapabilityField,
 ]
 
