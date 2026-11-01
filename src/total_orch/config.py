@@ -72,6 +72,9 @@ class Settings:
     omniroute_max_retries: int = 2
     registry_database_path: str = "registry.db"
     registry_stale_after_seconds: float = 604800.0
+    total_orch_api_key: str | None = None
+    total_orch_host: str = "127.0.0.1"
+    total_orch_port: int = 8080
     modelsdev_base_url: str = "https://models.dev"
     openrouter_base_url: str = "https://openrouter.ai"
     openrouter_api_key: str | None = None
@@ -94,6 +97,9 @@ class Settings:
             omniroute_max_retries=_int_env("OMNIROUTE_MAX_RETRIES", 2),
             registry_database_path=os.getenv("ORCHESTRATOR_REGISTRY_DATABASE_PATH", "registry.db"),
             registry_stale_after_seconds=_float_env("ORCHESTRATOR_REGISTRY_STALE_AFTER_SECONDS", 604800.0),
+            total_orch_api_key=os.getenv("TOTAL_ORCH_API_KEY") or None,
+            total_orch_host=os.getenv("TOTAL_ORCH_HOST", "127.0.0.1"),
+            total_orch_port=_int_env("TOTAL_ORCH_PORT", 8080),
             modelsdev_base_url=os.getenv("MODELSDEV_BASE_URL", "https://models.dev").rstrip("/"),
             openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai").rstrip("/"),
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY") or None,
@@ -117,6 +123,9 @@ class Settings:
             "omniroute_max_retries": self.omniroute_max_retries,
             "registry_database_path": self.registry_database_path,
             "registry_stale_after_seconds": self.registry_stale_after_seconds,
+            "total_orch_api_key_configured": self.total_orch_api_key is not None,
+            "total_orch_host": self.total_orch_host,
+            "total_orch_port": self.total_orch_port,
             "modelsdev_base_url": _redact_url(self.modelsdev_base_url),
             "openrouter_base_url": _redact_url(self.openrouter_base_url),
             "openrouter_api_key_configured": self.openrouter_api_key is not None,

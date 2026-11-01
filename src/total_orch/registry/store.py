@@ -23,7 +23,13 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from total_orch.domain import ModelFamily, ModelVariant, ProviderEndpoint, SourceProvenance
+from total_orch.domain import (
+    ModelFamily,
+    ModelVariant,
+    ProviderConnection,
+    ProviderEndpoint,
+    SourceProvenance,
+)
 
 EntityKind = Literal["family", "variant", "endpoint"]
 
@@ -60,6 +66,14 @@ CREATE TABLE IF NOT EXISTS endpoints (
 CREATE INDEX IF NOT EXISTS idx_variants_family ON variants(family_id);
 CREATE INDEX IF NOT EXISTS idx_endpoints_variant ON endpoints(model_variant_id);
 CREATE INDEX IF NOT EXISTS idx_endpoints_provider ON endpoints(provider);
+CREATE TABLE IF NOT EXISTS provider_connections (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_provider_connections_provider ON provider_connections(provider);
 CREATE TABLE IF NOT EXISTS field_provenance (
     entity_kind TEXT NOT NULL,
     entity_id TEXT NOT NULL,
@@ -281,6 +295,52 @@ class ModelRegistryStore:
         if row is None:
             raise KeyError(f"unknown provider endpoint: {endpoint_id}")
         return ProviderEndpoint.model_validate_json(str(row["payload"]))
+
+    # -- provider connection metadata --------------------------------------
+
+    def upsert_connection(self, record: ProviderConnection) -> bool:
+        payload = record.model_dump_json()
+        row = self._connection.execute(
+            "SELECT payload FROM provider_connections WHERE id = ?", (record.id,)
+        ).fetchone()
+        if row is not None and _stable_payload(str(row["payload"])) == _stable_payload(payload):
+            return False
+        self._connection.execute(
+            "INSERT INTO provider_connections (id, provider, schema_version, payload, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, "
+            "schema_version = excluded.schema_version, payload = excluded.payload, "
+            "updated_at = excluded.updated_at",
+            (record.id, record.provider, record.schema_version, payload, _utc_iso()),
+        )
+        self._connection.commit()
+        return True
+
+    def list_connections(self, *, provider: str | None = None) -> list[ProviderConnection]:
+        if provider is None:
+            rows = self._connection.execute(
+                "SELECT payload FROM provider_connections ORDER BY id"
+            ).fetchall()
+        else:
+            rows = self._connection.execute(
+                "SELECT payload FROM provider_connections WHERE provider = ? ORDER BY id",
+                (provider,),
+            ).fetchall()
+        return [ProviderConnection.model_validate_json(str(row["payload"])) for row in rows]
+
+    def get_connection(self, connection_id: str) -> ProviderConnection:
+        row = self._connection.execute(
+            "SELECT payload FROM provider_connections WHERE id = ?", (connection_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown provider connection: {connection_id}")
+        return ProviderConnection.model_validate_json(str(row["payload"]))
+
+    def delete_connection(self, connection_id: str) -> bool:
+        cursor = self._connection.execute(
+            "DELETE FROM provider_connections WHERE id = ?", (connection_id,)
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
 
     def count_families(self) -> int:
         return int(self._connection.execute("SELECT COUNT(*) AS n FROM families").fetchone()["n"])

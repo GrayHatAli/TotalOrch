@@ -21,6 +21,9 @@ dev = [
   "build>=1.2,<2",
 ]
 
+[project.scripts]
+total-orch = "total_orch.api:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["total_orch*"]

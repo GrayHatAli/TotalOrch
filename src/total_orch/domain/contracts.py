@@ -36,6 +36,35 @@ class ProviderConnectionRef(Contract):
     account_ref: str | None = None
 
 
+ProviderAuthMethod = Literal["none", "api_key", "bearer", "basic", "custom"]
+
+
+class ProviderConnection(Contract):
+    """TotalOrch-owned provider metadata; secret values never belong here."""
+
+    id: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    label: str | None = None
+    base_url: str | None = None
+    auth_method: ProviderAuthMethod = "none"
+    secret_ref: str | None = Field(default=None, pattern=r"^env://[A-Za-z_][A-Za-z0-9_]*$")
+    owner_ref: str | None = None
+    enabled: bool = True
+    healthy: bool | None = None
+    last_health_check_at: datetime | None = None
+    last_success_at: datetime | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    schema_version: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def validate_auth_reference(self) -> ProviderConnection:
+        if self.auth_method == "none" and self.secret_ref is not None:
+            raise ValueError("secret_ref cannot be set when auth_method is none")
+        if self.auth_method != "none" and self.secret_ref is None:
+            raise ValueError("secret_ref is required for authenticated connections")
+        return self
+
+
 ReasoningEffort = Literal["low", "medium", "high", "ultra"]
 
 

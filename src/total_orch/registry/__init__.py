@@ -25,6 +25,7 @@ from .merge import (
     assemble_variant,
     merge_fields,
 )
+from .models_endpoint_source import ModelsEndpointCatalogSource
 from .modelsdev_source import ModelsDevCatalogSource
 from .observations import (
     CatalogBatch,
@@ -69,6 +70,7 @@ __all__ = [
     "ModelRegistryService",
     "ModelRegistryStore",
     "ModelsDevCatalogSource",
+    "ModelsEndpointCatalogSource",
     "Observation",
     "OmniRouteCatalogSource",
     "OpenRouterCatalogSource",

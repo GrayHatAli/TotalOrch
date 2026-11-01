@@ -7,12 +7,14 @@ observed through different gateways stay distinguishable.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 
 from tests.test_openai_compat_gateway import StubTransport, responses
-from total_orch.gateway import OpenAICompatAdapter
+from total_orch.gateway import GatewayAdapter, GatewayModel, OpenAICompatAdapter
 from total_orch.gateway.omniroute import HttpResponse
-from total_orch.registry import GatewayCatalogSource, IdentityRules
+from total_orch.registry import GatewayCatalogSource, IdentityRules, ModelsEndpointCatalogSource
 
 
 @pytest.mark.asyncio
@@ -93,3 +95,37 @@ async def test_two_gateways_serving_one_model_keep_distinct_provenance() -> None
         for observation in combined.endpoints
         if observation.endpoint is not None
     } == {"openai"}
+
+
+@pytest.mark.asyncio
+async def test_models_endpoint_source_does_not_require_management_api() -> None:
+    adapter = Mock(spec=GatewayAdapter)
+    adapter.list_models = AsyncMock(
+        return_value=(
+            GatewayModel(id="auto/best-coding", provider="auto", context_window=2_000_000),
+            GatewayModel(id="openai/gpt-4o", provider=None, context_window=128_000),
+            GatewayModel(id="bare-model", provider=None),
+        )
+    )
+    adapter.list_connections = AsyncMock(side_effect=AssertionError("management API must not be called"))
+    adapter.list_provider_models = AsyncMock(side_effect=AssertionError("management API must not be called"))
+
+    source = ModelsEndpointCatalogSource(adapter, IdentityRules())
+
+    batch = await source.fetch()
+
+    assert len(batch.variants) == 3
+    assert len(batch.endpoints) == 3
+    assert {observation.endpoint.provider for observation in batch.endpoints if observation.endpoint} == {
+        "auto",
+        "openai",
+        "default",
+    }
+    assert {observation.endpoint.id for observation in batch.endpoints if observation.endpoint} == {
+        "auto/best-coding",
+        "openai/gpt-4o",
+        "default/bare-model",
+    }
+    adapter.list_models.assert_awaited_once_with()
+    adapter.list_connections.assert_not_awaited()
+    adapter.list_provider_models.assert_not_awaited()

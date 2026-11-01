@@ -15,6 +15,37 @@ Gateway Adapter boundary, the Model Intelligence Registry, default Agent
 Profiles with automatic Model Pool generation, and the explainable Router
 from MVP phases 0–5.
 
+The registry can ingest a gateway's standard model catalog through
+`ModelsEndpointCatalogSource`, which uses `GatewayAdapter.list_models()` only.
+This path does not require a gateway management API or management credential;
+management-aware sources remain available when a gateway exposes richer
+Provider health and connection metadata.
+
+## Public API and provider credentials
+
+Install the package and run the dependency-free HTTP API with:
+
+```bash
+TOTAL_ORCH_API_KEY='replace-with-a-long-random-value' \
+  .venv/bin/total-orch --host 127.0.0.1 --port 8080
+```
+
+`GET /health` is public. All `/v1/*` routes require
+`Authorization: Bearer $TOTAL_ORCH_API_KEY` outside development and test
+environments. The API provides:
+
+- `GET /v1/registry/counts`, `GET /v1/registry/models`, and the OpenAI-compatible
+  alias `GET /v1/models`
+- `GET`, `POST`, and `DELETE /v1/providers/connections`
+- `POST /v1/chat/completions` as the first non-streaming OpenAI-compatible
+  execution facade
+
+Provider connections store only metadata and a reference such as
+`env://OPENAI_API_KEY`; raw API keys are rejected by the public API and are
+never returned in responses. The current resolver reads environment-backed
+references at runtime. Encrypted secret persistence, direct per-provider
+adapter injection, and streaming remain later roadmap work.
+
 ## Development setup
 
 ```bash
@@ -97,5 +128,9 @@ reimplement provider adapters.
   exploration, fallback ordering, route preview, and `RouteDecision`
   persistence.
 - `total_orch.config`: environment configuration with redacted logging.
+- `total_orch.api`: dependency-free public HTTP API and OpenAI-compatible
+  completion facade.
+- `total_orch.credentials`: environment-backed secret-reference resolver;
+  raw credential values are intentionally outside the registry.
 
 LangGraph workflow nodes are intentionally left for the next MVP phase.

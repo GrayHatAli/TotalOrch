@@ -7,11 +7,16 @@ Provider adapters in the Orchestrator codebase.
 1. Copy the root `.env.example` to `.env`.
 2. Set `OMNIROUTE_IMAGE` to a pinned, compatible OmniRoute image (or use the
    locally built `omniroute:local` image).
-3. Start the managed gateway:
+3. Start the managed gateway and the TotalOrch API:
 
 ```bash
-docker compose --env-file .env -f deployment/docker-compose.yml up -d omniroute
+docker compose --env-file .env -f deployment/docker-compose.yml up -d --build
 ```
+
+The API listens on port `8080` by default. Set `TOTAL_ORCH_API_KEY` in `.env`
+before starting it; clients connect to `http://localhost:8080/v1` with a
+Bearer token. The registry database is persisted in the `total-orch-data`
+volume.
 
 For an external OmniRoute deployment, do not start the compose service and set
 `OMNIROUTE_BASE_URL` to the external service URL. The application still talks

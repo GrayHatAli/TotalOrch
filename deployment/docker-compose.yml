@@ -7,5 +7,22 @@ services:
     environment:
       PORT: 20128
 
-  # The platform API will be added in a later MVP phase. Keeping OmniRoute as
-  # a managed compose service now fixes the lifecycle and network boundary.
+  total-orch:
+    build: ..
+    restart: unless-stopped
+    depends_on:
+      - omniroute
+    ports:
+      - "${TOTAL_ORCH_PORT:-8080}:8080"
+    environment:
+      ORCHESTRATOR_ENV: ${ORCHESTRATOR_ENV:-production}
+      TOTAL_ORCH_API_KEY: ${TOTAL_ORCH_API_KEY:?set TOTAL_ORCH_API_KEY}
+      TOTAL_ORCH_HOST: 0.0.0.0
+      TOTAL_ORCH_PORT: 8080
+      ORCHESTRATOR_REGISTRY_DATABASE_PATH: /var/lib/total-orch/registry.db
+      OMNIROUTE_BASE_URL: http://omniroute:20128
+    volumes:
+      - total-orch-data:/var/lib/total-orch
+
+volumes:
+  total-orch-data:
