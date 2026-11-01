@@ -3,7 +3,7 @@ import json
 from total_orch.api import TotalOrchApplication
 from total_orch.config import Settings
 from total_orch.domain import ProviderConnectionRef
-from total_orch.gateway import FakeGatewayAdapter, GatewayCompletion
+from total_orch.gateway import FakeGatewayAdapter, GatewayCompletion, GatewayModel
 from total_orch.registry import (
     IdentityRules,
     ModelRegistryService,
@@ -17,6 +17,7 @@ def application() -> TotalOrchApplication:
     store.initialize()
     gateway = FakeGatewayAdapter(
         connections=(ProviderConnectionRef(id="openai-main", provider="openai"),),
+        models=(GatewayModel(id="gpt-test", provider="openai", capabilities={"tool_calling": True}),),
     )
     gateway.register_response(
         "openai",
@@ -141,6 +142,7 @@ def test_connection_health_updates_last_check_and_success_timestamps() -> None:
     assert checked.body["data"]["healthy"] is True
     assert checked.body["data"]["last_health_check_at"] is not None
     assert checked.body["data"]["last_success_at"] is not None
+    assert checked.body["data"]["capability_observations"] == ["tool_calling"]
 
 
 def test_openai_compatible_completion_facade_uses_gateway_boundary() -> None:

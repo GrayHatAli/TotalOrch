@@ -53,6 +53,7 @@ class ProviderConnection(Contract):
     healthy: bool | None = None
     last_health_check_at: datetime | None = None
     last_success_at: datetime | None = None
+    capability_observations: tuple[str, ...] = ()
     metadata: dict[str, str] = Field(default_factory=dict)
     schema_version: int = Field(default=1, ge=1)
 

@@ -24,7 +24,7 @@ boundaries; none is the source of truth for the TotalOrch domain model.
   - [x] Add provider and connection domain contracts without storing raw secrets.
   - [x] Store secret references, authentication method, base URL, enabled state, and ownership metadata.
   - [x] Add connection health and last-success timestamps.
-  - [ ] Add provider capability observations.
+  - [x] Add provider capability observations.
   - [ ] Add encrypted or external persistence suitable for deployment.
   - [ ] Add import/export with secret redaction and explicit confirmation for credential-bearing data.
 

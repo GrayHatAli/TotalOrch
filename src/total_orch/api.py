@@ -195,12 +195,28 @@ class TotalOrchApplication:
             healthy = asyncio.run(self.gateway.health_check(connection.provider))
         except GatewayError as exc:
             return ApiResponse(exc.status_code or HTTPStatus.BAD_GATEWAY, {"error": exc.as_dict()})
+        capabilities = connection.capability_observations
+        try:
+            models = asyncio.run(self.gateway.list_models())
+        except GatewayError:
+            pass
+        else:
+            observed = {
+                key
+                for model in models
+                if model.provider == connection.provider
+                or (model.provider is None and model.id.partition("/")[0] == connection.provider)
+                for key, value in model.capabilities.items()
+                if value
+            }
+            capabilities = tuple(sorted(observed))
         now = datetime.now(UTC)
         updated = connection.model_copy(
             update={
                 "healthy": healthy,
                 "last_health_check_at": now,
                 "last_success_at": now if healthy else connection.last_success_at,
+                "capability_observations": capabilities,
             }
         )
         self.registry.store.upsert_connection(updated)
