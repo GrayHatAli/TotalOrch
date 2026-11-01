@@ -9,6 +9,7 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -71,6 +72,9 @@ class TotalOrchApplication:
                 return self._connections_response(parse_qs(parsed.query))
             if method == "POST" and path == "/v1/providers/connections":
                 return self._create_connection(body)
+            if method == "POST" and path.startswith("/v1/providers/connections/") and path.endswith("/health"):
+                connection_id = unquote(path.removesuffix("/health").rsplit("/", 1)[-1])
+                return self._check_connection(connection_id)
             if method == "DELETE" and path.startswith("/v1/providers/connections/"):
                 return self._delete_connection(unquote(path.rsplit("/", 1)[-1]))
             if method == "POST" and path == "/v1/chat/completions":
@@ -135,6 +139,28 @@ class TotalOrchApplication:
         if not self.registry.store.delete_connection(connection_id):
             return ApiResponse(HTTPStatus.NOT_FOUND, {"error": {"message": "connection not found"}})
         return ApiResponse(HTTPStatus.NO_CONTENT, {})
+
+    def _check_connection(self, connection_id: str) -> ApiResponse:
+        try:
+            connection = self.registry.store.get_connection(connection_id)
+        except KeyError:
+            return ApiResponse(HTTPStatus.NOT_FOUND, {"error": {"message": "connection not found"}})
+        if not connection.enabled:
+            return ApiResponse(HTTPStatus.CONFLICT, {"error": {"message": "connection is disabled"}})
+        try:
+            healthy = asyncio.run(self.gateway.health_check(connection.provider))
+        except GatewayError as exc:
+            return ApiResponse(exc.status_code or HTTPStatus.BAD_GATEWAY, {"error": exc.as_dict()})
+        now = datetime.now(UTC)
+        updated = connection.model_copy(
+            update={
+                "healthy": healthy,
+                "last_health_check_at": now,
+                "last_success_at": now if healthy else connection.last_success_at,
+            }
+        )
+        self.registry.store.upsert_connection(updated)
+        return ApiResponse(HTTPStatus.OK, {"data": self._public_connection(updated)})
 
     def _completion(self, body: bytes) -> ApiResponse:
         payload = self._json_object(body)

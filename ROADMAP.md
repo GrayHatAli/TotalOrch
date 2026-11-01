@@ -23,7 +23,8 @@ boundaries; none is the source of truth for the TotalOrch domain model.
 - [ ] Phase 2 — Make Provider connections first-class TotalOrch records
   - [x] Add provider and connection domain contracts without storing raw secrets.
   - [x] Store secret references, authentication method, base URL, enabled state, and ownership metadata.
-  - [ ] Add connection health, capability observations, and last-success timestamps.
+  - [x] Add connection health and last-success timestamps.
+  - [ ] Add provider capability observations.
   - [ ] Add encrypted or external persistence suitable for deployment.
   - [ ] Add import/export with secret redaction and explicit confirmation for credential-bearing data.
 

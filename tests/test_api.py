@@ -75,6 +75,25 @@ def test_connection_api_stores_only_secret_reference_and_redacts_it_from_respons
     assert "sk-should-not-enter" not in json.dumps(rejected.body)
 
 
+def test_connection_health_updates_last_check_and_success_timestamps() -> None:
+    app = application()
+    headers = {"Authorization": "Bearer totalorch-test"}
+    created = app.handle(
+        "POST",
+        "/v1/providers/connections",
+        headers=headers,
+        body=json.dumps({"id": "openai-main", "provider": "openai"}).encode(),
+    )
+
+    checked = app.handle("POST", "/v1/providers/connections/openai-main/health", headers=headers)
+
+    assert created.status_code == 201
+    assert checked.status_code == 200
+    assert checked.body["data"]["healthy"] is True
+    assert checked.body["data"]["last_health_check_at"] is not None
+    assert checked.body["data"]["last_success_at"] is not None
+
+
 def test_openai_compatible_completion_facade_uses_gateway_boundary() -> None:
     app = application()
     response = app.handle(

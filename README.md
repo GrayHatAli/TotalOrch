@@ -41,6 +41,7 @@ environments. The API provides:
 - `GET /v1/registry/counts`, `GET /v1/registry/models`, and the OpenAI-compatible
   alias `GET /v1/models`
 - `GET`, `POST`, and `DELETE /v1/providers/connections`
+- `POST /v1/providers/connections/{id}/health`
 - `POST /v1/chat/completions` as the first non-streaming OpenAI-compatible
   execution facade
 
