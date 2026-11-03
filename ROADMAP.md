@@ -25,7 +25,7 @@ boundaries; none is the source of truth for the TotalOrch domain model.
   - [x] Store secret references, authentication method, base URL, enabled state, and ownership metadata.
   - [x] Add connection health and last-success timestamps.
   - [x] Add provider capability observations.
-  - [ ] Add encrypted or external persistence suitable for deployment.
+  - [x] Persist external secret references while keeping provider secret values outside TotalOrch.
   - [ ] Add import/export with secret redaction and explicit confirmation for credential-bearing data.
 
 - [ ] Phase 3 — Build the canonical model registry service
@@ -38,25 +38,25 @@ boundaries; none is the source of truth for the TotalOrch domain model.
 - [ ] Phase 4 — Separate discovery from execution
   - [ ] Keep the existing gateway adapters as compatibility execution backends.
   - [ ] Define a provider-neutral execution contract for direct Provider adapters.
-  - [ ] Implement direct OpenAI-compatible execution first.
+  - [x] Implement direct OpenAI-compatible execution first.
   - [ ] Implement direct Anthropic execution with streaming and tool-call coverage.
   - [ ] Add further Provider adapters only when the contract and tests justify them.
   - [ ] Compare direct execution with gateway execution before removing any gateway dependency.
 
 - [ ] Phase 5 — Add the TotalOrch public service
   - [x] Add a health endpoint and a documented application entrypoint.
-  - [x] Add an OpenAI-compatible request facade for Harness clients.
+  - [x] Add an OpenAI-compatible request facade for Harness clients, including streaming.
   - [x] Authenticate Harness requests with a configured TotalOrch API key.
   - [x] Issue and revoke TotalOrch API keys without storing raw tokens.
   - [ ] Route requests through the canonical registry and record explainable decisions.
   - [ ] Keep Provider credentials and backend-specific management APIs private.
 
 - [ ] Phase 6 — Deployment and operational hardening
-  - [ ] Add a reproducible TotalOrch container build.
-  - [ ] Define persistence for the registry and credential references.
+  - [x] Add a reproducible TotalOrch container build.
+  - [x] Define persistence for the registry and credential references.
   - [ ] Add startup checks for registry, execution backend, and secret configuration.
   - [ ] Add metrics, request IDs, structured logs, and redaction checks.
-  - [ ] Deploy TotalOrch and an execution backend as independently replaceable services.
+  - [x] Deploy TotalOrch and an execution backend as independently replaceable services.
   - [ ] Verify restart, redeploy, backup, restore, and provider-failure behavior.
 
 - [ ] Phase 7 — Completion criteria

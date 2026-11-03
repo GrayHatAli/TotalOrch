@@ -46,14 +46,15 @@ environments. The API provides:
   TotalOrch API keys; newly issued tokens are returned only once
 - `GET`, `POST`, and `DELETE /v1/providers/connections`
 - `POST /v1/providers/connections/{id}/health`
-- `POST /v1/chat/completions` as the first non-streaming OpenAI-compatible
-  execution facade
+- `POST /v1/chat/completions` as an OpenAI-compatible execution facade,
+  including SSE streaming
 
 Provider connections store only metadata and a reference such as
 `env://OPENAI_API_KEY`; raw API keys are rejected by the public API and are
 never returned in responses. The current resolver reads environment-backed
-references at runtime. Encrypted secret persistence, direct per-provider
-adapter injection, and streaming remain later roadmap work.
+references at runtime. Connections with a `base_url` use a direct
+OpenAI-compatible adapter for completion and streaming; connections without
+one use the configured gateway.
 
 ## Development setup
 

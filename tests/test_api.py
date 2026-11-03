@@ -1,9 +1,16 @@
 import json
 
+import pytest
+
 from total_orch.api import TotalOrchApplication
 from total_orch.config import Settings
 from total_orch.domain import ProviderConnectionRef
-from total_orch.gateway import FakeGatewayAdapter, GatewayCompletion, GatewayModel
+from total_orch.gateway import (
+    FakeGatewayAdapter,
+    GatewayCompletion,
+    GatewayModel,
+    OpenAICompatAdapter,
+)
 from total_orch.registry import (
     IdentityRules,
     ModelRegistryService,
@@ -163,3 +170,57 @@ def test_openai_compatible_completion_facade_uses_gateway_boundary() -> None:
     assert response.status_code == 200
     assert response.body["choices"][0]["message"]["content"] == "done"
     assert response.body["object"] == "chat.completion"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_stream_emits_sse_chunks_and_done_marker() -> None:
+    app = application()
+    _payload, request = app._completion_request(
+        json.dumps(
+            {
+                "model": "gpt-test",
+                "provider": "openai",
+                "messages": [{"role": "user", "content": "hello"}],
+                "stream": True,
+            }
+        ).encode()
+    )
+
+    events = [event async for event in app._stream_events(request)]
+
+    assert any(b"chat.completion.chunk" in event for event in events)
+    assert events[-1] == b"data: [DONE]\n\n"
+
+
+def test_connection_secret_reference_builds_direct_openai_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = application()
+    monkeypatch.setenv("PROVIDER_API_KEY", "provider-secret-for-test")
+    app.handle(
+        "POST",
+        "/v1/providers/connections",
+        headers={"Authorization": "Bearer totalorch-test"},
+        body=json.dumps(
+            {
+                "id": "direct-openai",
+                "provider": "direct-openai",
+                "base_url": "http://provider.test",
+                "auth_method": "api_key",
+                "secret_ref": "env://PROVIDER_API_KEY",
+            }
+        ).encode(),
+    )
+
+    _payload, request = app._completion_request(
+        json.dumps(
+            {
+                "model": "gpt-test",
+                "provider": "direct-openai",
+                "messages": [{"role": "user", "content": "hello"}],
+            }
+        ).encode()
+    )
+    adapter = app._gateway_for_request(request)
+
+    assert isinstance(adapter, OpenAICompatAdapter)
+    assert adapter._base_url == "http://provider.test"
+    assert adapter._api_key == "provider-secret-for-test"

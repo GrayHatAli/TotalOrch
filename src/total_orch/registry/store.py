@@ -21,6 +21,7 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from threading import RLock
 from typing import Literal
 
 from total_orch.domain import (
@@ -135,7 +136,8 @@ class ModelRegistryStore:
 
     def __init__(self, database_path: str) -> None:
         self.database_path = database_path
-        self._connection = sqlite3.connect(database_path)
+        self._connection = sqlite3.connect(database_path, check_same_thread=False)
+        self._lock = RLock()
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA foreign_keys = ON")
 

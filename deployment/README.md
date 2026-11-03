@@ -18,6 +18,13 @@ before starting it; clients connect to `http://localhost:8080/v1` with a
 Bearer token. The registry database is persisted in the `total-orch-data`
 volume.
 
+After startup, refresh the registry before routing requests:
+
+```bash
+curl -X POST http://localhost:8080/v1/registry/sync \
+  -H "Authorization: Bearer $TOTAL_ORCH_API_KEY"
+```
+
 For an external OmniRoute deployment, do not start the compose service and set
 `OMNIROUTE_BASE_URL` to the external service URL. The application still talks
 through `OmniRouteAdapter`; the domain contracts and future routing behavior

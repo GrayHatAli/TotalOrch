@@ -9,18 +9,26 @@ import hmac
 import json
 import secrets
 import time
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import RLock
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 from uuid import uuid4
 
 from total_orch.config import Settings
+from total_orch.credentials import CredentialError, EnvironmentSecretResolver
 from total_orch.domain import ProviderConnection
-from total_orch.gateway import GatewayAdapter, GatewayError, GatewayRequest, build_gateway
+from total_orch.gateway import (
+    GatewayAdapter,
+    GatewayError,
+    GatewayRequest,
+    OpenAICompatAdapter,
+    build_gateway,
+)
 from total_orch.gateway.models import ChatMessage
 from total_orch.registry import (
     IdentityRules,
@@ -48,8 +56,21 @@ class TotalOrchApplication:
         self.settings = settings
         self.registry = registry
         self.gateway = gateway
+        self._secret_resolver = EnvironmentSecretResolver()
+        self._store_lock = RLock()
 
     def handle(
+        self,
+        method: str,
+        target: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        body: bytes = b"",
+    ) -> ApiResponse:
+        with self._store_lock:
+            return self._handle(method, target, headers=headers, body=body)
+
+    def _handle(
         self,
         method: str,
         target: str,
@@ -192,8 +213,10 @@ class TotalOrchApplication:
         if not connection.enabled:
             return ApiResponse(HTTPStatus.CONFLICT, {"error": {"message": "connection is disabled"}})
         try:
-            healthy = asyncio.run(self.gateway.health_check(connection.provider))
-        except GatewayError as exc:
+            healthy = asyncio.run(self._gateway_for_connection(connection).health_check(connection.provider))
+        except (CredentialError, GatewayError) as exc:
+            if isinstance(exc, CredentialError):
+                return ApiResponse(HTTPStatus.BAD_REQUEST, {"error": {"message": str(exc)}})
             return ApiResponse(exc.status_code or HTTPStatus.BAD_GATEWAY, {"error": exc.as_dict()})
         capabilities = connection.capability_observations
         try:
@@ -247,6 +270,28 @@ class TotalOrchApplication:
         payload = self._json_object(body)
         if payload.get("stream") is True:
             return ApiResponse(HTTPStatus.NOT_IMPLEMENTED, {"error": {"message": "streaming is not supported by this HTTP facade yet"}})
+        _payload, request = self._completion_request(body)
+        try:
+            completion = asyncio.run(self._gateway_for_request(request).complete(request))
+        except (CredentialError, GatewayError) as exc:
+            if isinstance(exc, CredentialError):
+                return ApiResponse(HTTPStatus.BAD_REQUEST, {"error": {"message": str(exc)}})
+            status = exc.status_code if exc.status_code is not None else HTTPStatus.BAD_GATEWAY
+            return ApiResponse(status, {"error": exc.as_dict()})
+        return ApiResponse(
+            HTTPStatus.OK,
+            {
+                "id": completion.request_id or f"chatcmpl-{uuid4().hex}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": completion.model,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": completion.output_text}, "finish_reason": completion.finish_reason}],
+                "usage": dict(completion.usage),
+            },
+        )
+
+    def _completion_request(self, body: bytes) -> tuple[dict[str, Any], GatewayRequest]:
+        payload = self._json_object(body)
         model = payload.get("model")
         messages = payload.get("messages")
         if not isinstance(model, str) or not model:
@@ -260,28 +305,68 @@ class TotalOrchApplication:
         )
         if len(parsed_messages) != len(messages):
             raise ValueError("each message must contain role and content")
-        request = GatewayRequest(
+        return payload, GatewayRequest(
             provider=str(payload.get("provider", "auto")),
             model=model,
             messages=parsed_messages,
             temperature=payload.get("temperature"),
             reasoning_effort=payload.get("reasoning_effort"),
         )
+
+    async def _stream_events(self, request: GatewayRequest) -> AsyncIterator[bytes]:
+        stream_id = f"chatcmpl-{uuid4().hex}"
+        first = True
         try:
-            completion = asyncio.run(self.gateway.complete(request))
-        except GatewayError as exc:
-            status = exc.status_code if exc.status_code is not None else HTTPStatus.BAD_GATEWAY
-            return ApiResponse(status, {"error": exc.as_dict()})
-        return ApiResponse(
-            HTTPStatus.OK,
-            {
-                "id": completion.request_id or f"chatcmpl-{uuid4().hex}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": completion.model,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": completion.output_text}, "finish_reason": completion.finish_reason}],
-                "usage": dict(completion.usage),
-            },
+            async for chunk in self._gateway_for_request(request).stream(request):
+                delta: dict[str, Any] = {"content": chunk.delta}
+                if first:
+                    delta["role"] = "assistant"
+                    first = False
+                event: dict[str, Any] = {
+                    "id": chunk.request_id or stream_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": chunk.model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": delta,
+                            "finish_reason": chunk.finish_reason,
+                        }
+                    ],
+                }
+                if chunk.usage:
+                    event["usage"] = dict(chunk.usage)
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
+        except (CredentialError, GatewayError) as exc:
+            if isinstance(exc, CredentialError):
+                error: dict[str, Any] = {"error": {"message": str(exc)}}
+                yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n".encode()
+                return
+            error = {"error": exc.as_dict()}
+            yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n".encode()
+        finally:
+            yield b"data: [DONE]\n\n"
+
+    def _gateway_for_request(self, request: GatewayRequest) -> GatewayAdapter:
+        connections = self.registry.store.list_connections(provider=request.provider)
+        connection = next((item for item in connections if item.enabled and item.base_url), None)
+        if connection is None:
+            return self.gateway
+        return self._gateway_for_connection(connection)
+
+    def _gateway_for_connection(self, connection: ProviderConnection) -> GatewayAdapter:
+        if connection.base_url is None:
+            return self.gateway
+        if connection.auth_method == "custom":
+            raise CredentialError("custom provider authentication is not supported by the direct adapter")
+        secret = self._secret_resolver.resolve(connection.secret_ref) if connection.secret_ref else None
+        return OpenAICompatAdapter(
+            base_url=connection.base_url,
+            api_key=secret,
+            timeout_seconds=self.settings.gateway_timeout_seconds,
+            max_retries=self.settings.gateway_max_retries,
+            router_name=connection.provider,
         )
 
     @staticmethod
@@ -343,12 +428,48 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method: str) -> None:
         length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        if method == "POST" and urlsplit(self.path).path == "/v1/chat/completions":
+            try:
+                stream_requested = TotalOrchApplication._json_object(body).get("stream") is True
+            except (TypeError, ValueError, json.JSONDecodeError):
+                stream_requested = False
+            if stream_requested:
+                self._dispatch_stream(body)
+                return
         response = self.application.handle(
             method,
             self.path,
             headers={str(key): str(value) for key, value in self.headers.items()},
-            body=self.rfile.read(length),
+            body=body,
         )
+        self._write_response(response)
+
+    def _dispatch_stream(self, body: bytes) -> None:
+        headers = {str(key): str(value) for key, value in self.headers.items()}
+        with self.application._store_lock:
+            if not self.application._authorized({key.lower(): value for key, value in headers.items()}):
+                self._write_response(ApiResponse(HTTPStatus.UNAUTHORIZED, {"error": {"message": "authentication required"}}))
+                return
+            try:
+                _payload, request = self.application._completion_request(body)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                self._write_response(ApiResponse(HTTPStatus.BAD_REQUEST, {"error": {"message": str(exc)}}))
+                return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        async def write_events() -> None:
+            async for event in self.application._stream_events(request):
+                self.wfile.write(event)
+                self.wfile.flush()
+
+        asyncio.run(write_events())
+
+    def _write_response(self, response: ApiResponse) -> None:
         payload = b"" if response.status_code == HTTPStatus.NO_CONTENT else json.dumps(
             response.body, ensure_ascii=False
         ).encode("utf-8")
