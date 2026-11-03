@@ -1,6 +1,6 @@
 # TotalOrch — MVP Plan
 
-**Status:** In progress — phases 0–10 implementation slice complete; live OmniRoute acceptance pending
+**Status:** Implementation complete for the deterministic suite — live OmniRoute acceptance pending
 
 **Version:** 1.0
 

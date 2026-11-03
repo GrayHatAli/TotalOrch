@@ -77,6 +77,7 @@ class TelemetryStore:
         self.database_path = database_path
         self._connection = sqlite3.connect(database_path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
+        self._connection.execute("PRAGMA journal_mode = WAL")
         self._lock = RLock()
         self._queue: Queue[Operation | None] = Queue()
         self._thread: Thread | None = None
