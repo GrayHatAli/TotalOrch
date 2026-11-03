@@ -97,6 +97,9 @@ class GatewayCatalogSource:
         capabilities = normalize_capability_flags(model.capabilities)
         variant_fields: dict[str, FieldValue] = {}
         variant_fields["model_kind"] = claimed(classify_model(model, connection.provider), self.source)
+        lifecycle = classify_lifecycle(model)
+        if lifecycle is not None:
+            variant_fields["lifecycle_state"] = claimed(lifecycle, self.source)
         if model.context_window is not None and model.context_window > 0:
             variant_fields["context_window"] = claimed(model.context_window, self.source)
 
@@ -131,3 +134,15 @@ def classify_model(model: GatewayModel, provider: str | None = None) -> ModelKin
     if metadata.get("automatic") is True or provider == "auto":
         return ModelKind.automatic
     return ModelKind.concrete
+
+
+def classify_lifecycle(model: GatewayModel) -> str | None:
+    metadata = model.metadata
+    raw = metadata.get("lifecycle_state") or metadata.get("lifecycle") or metadata.get("status")
+    if isinstance(raw, str) and raw.strip().lower() in {"active", "preview", "deprecated", "retired"}:
+        return raw.strip().lower()
+    if metadata.get("deprecated") is True:
+        return "deprecated"
+    if metadata.get("preview") is True:
+        return "preview"
+    return None

@@ -1,6 +1,6 @@
 # TotalOrch — MVP Plan
 
-**Status:** In progress — phases 0–5 implementation slice complete; live OmniRoute acceptance pending
+**Status:** In progress — phases 0–10 implementation slice complete; live OmniRoute acceptance pending
 
 **Version:** 1.0
 
@@ -8,21 +8,19 @@
 
 ## Implementation status
 
-The phase 0–5 foundation is implemented under `src/total_orch/` with
+The phase 0–10 implementation is present under `src/total_orch/` with
 contract tests, a configurable OmniRoute adapter, a local Model Intelligence
 Registry (persistence, catalog ingestion, canonical identity, field-authority
-merging, staleness, and query APIs), default Agent Profiles with an
-automatic, explainable Model Pool builder (`src/total_orch/profiles/`), and
-the explainable router (`src/total_orch/router/`): hard-constraint filtering
-before weighted scoring, five policy presets plus preference-derived
-policies, per-factor scoring with human-readable contributions, deterministic
-tie-breaking, bounded exploration, ordered fallbacks, a route-preview API,
-and SQLite `RouteDecision` persistence with policy-weight snapshots. The
-deterministic test suite passes, but live phase-2 acceptance still requires a
-running managed OmniRoute instance with at least two configured Providers.
-This distinction is intentional: code-level adapter, registry, pool-builder,
-and router coverage is complete, while environment-level Provider verification
-must use real credentials and must not be faked.
+merging, staleness, manual overrides, and query APIs), default Agent Profiles
+with an automatic, explainable Model Pool builder (`src/total_orch/profiles/`),
+the explainable router (`src/total_orch/router/`), a LangGraph workflow
+runtime (`src/total_orch/workflow/`), sandboxed repository tools
+(`src/total_orch/tools/`), and the async SQLite telemetry ledger
+(`src/total_orch/telemetry/`). The deterministic test suite passes, but live
+phase-2 acceptance still requires a running managed OmniRoute instance with at
+least two configured Providers. This distinction is intentional: code-level
+coverage is complete, while environment-level Provider verification must use
+real credentials and must not be faked.
 
 ## 1. MVP Objective
 
@@ -400,20 +398,20 @@ Hard constraints run before scoring. Scores must be versioned so a historical ro
 
 #### Tasks
 
-- [ ] **MVP-0601** Define the workflow state schema.
-- [ ] **MVP-0602** Implement request intake and task classification.
-- [ ] **MVP-0603** Implement Planner node.
-- [ ] **MVP-0604** Implement Developer/Coder node.
-- [ ] **MVP-0605** Implement Reviewer node.
-- [ ] **MVP-0606** Implement optional Tester node.
-- [ ] **MVP-0607** Resolve an Agent's Model Pool before execution.
-- [ ] **MVP-0608** Execute model calls through the Gateway Adapter.
-- [ ] **MVP-0609** Add checkpointing after every workflow node.
-- [ ] **MVP-0610** Add retry and fallback at node level.
-- [ ] **MVP-0611** Add result validation and structured output parsing.
-- [ ] **MVP-0612** Add cancellation and timeout propagation.
-- [ ] **MVP-0613** Add final result aggregation.
-- [ ] **MVP-0614** Add workflow replay for failed runs.
+- [x] **MVP-0601** Define the workflow state schema.
+- [x] **MVP-0602** Implement request intake and task classification.
+- [x] **MVP-0603** Implement Planner node.
+- [x] **MVP-0604** Implement Developer/Coder node.
+- [x] **MVP-0605** Implement Reviewer node.
+- [x] **MVP-0606** Implement optional Tester node.
+- [x] **MVP-0607** Resolve an Agent's Model Pool before execution.
+- [x] **MVP-0608** Execute model calls through the Gateway Adapter.
+- [x] **MVP-0609** Add checkpointing after every workflow node.
+- [x] **MVP-0610** Add retry and fallback at node level.
+- [x] **MVP-0611** Add result validation and structured output parsing.
+- [x] **MVP-0612** Add cancellation and timeout propagation.
+- [x] **MVP-0613** Add final result aggregation.
+- [x] **MVP-0614** Add workflow replay for failed runs.
 
 #### First workflow
 
@@ -447,16 +445,16 @@ Aggregate and Return
 
 #### Tasks
 
-- [ ] **MVP-0701** Define Tool Manager contracts.
-- [ ] **MVP-0702** Implement safe filesystem inspection.
-- [ ] **MVP-0703** Implement repository status and diff inspection.
-- [ ] **MVP-0704** Implement controlled patch application.
-- [ ] **MVP-0705** Implement test command execution in a sandbox.
-- [ ] **MVP-0706** Add timeout, output limits, and cancellation to tools.
-- [ ] **MVP-0707** Add tool permission checks per Agent Profile.
-- [ ] **MVP-0708** Add basic project metadata and file index.
-- [ ] **MVP-0709** Add context provenance to Planner and Reviewer inputs.
-- [ ] **MVP-0710** Add an MCP integration spike for one read-only tool.
+- [x] **MVP-0701** Define Tool Manager contracts.
+- [x] **MVP-0702** Implement safe filesystem inspection.
+- [x] **MVP-0703** Implement repository status and diff inspection.
+- [x] **MVP-0704** Implement controlled patch application.
+- [x] **MVP-0705** Implement test command execution in a sandbox.
+- [x] **MVP-0706** Add timeout, output limits, and cancellation to tools.
+- [x] **MVP-0707** Add tool permission checks per Agent Profile.
+- [x] **MVP-0708** Add basic project metadata and file index.
+- [x] **MVP-0709** Add context provenance to Planner and Reviewer inputs.
+- [x] **MVP-0710** Add an MCP integration spike for one read-only tool.
 
 #### Acceptance criteria
 
@@ -471,16 +469,16 @@ Aggregate and Return
 
 #### Tasks
 
-- [ ] **MVP-0801** Implement request and workflow trace IDs.
-- [ ] **MVP-0802** Record Provider Endpoint latency and time-to-first-token where available.
-- [ ] **MVP-0803** Record token usage and estimated cost.
-- [ ] **MVP-0804** Record status, error class, retry count, and fallback use.
-- [ ] **MVP-0805** Record Agent, model, Provider, and Pool assignments.
-- [ ] **MVP-0806** Record validation results, test results, and user acceptance signals where available.
-- [ ] **MVP-0807** Implement rolling health aggregates.
-- [ ] **MVP-0808** Update endpoint availability and cooldown signals.
-- [ ] **MVP-0809** Add a read-only routing and execution report.
-- [ ] **MVP-0810** Keep adaptive policy changes disabled by default until enough data exists.
+- [x] **MVP-0801** Implement request and workflow trace IDs.
+- [x] **MVP-0802** Record Provider Endpoint latency and time-to-first-token where available.
+- [x] **MVP-0803** Record token usage and estimated cost.
+- [x] **MVP-0804** Record status, error class, retry count, and fallback use.
+- [x] **MVP-0805** Record Agent, model, Provider, and Pool assignments.
+- [x] **MVP-0806** Record validation results, test results, and user acceptance signals where available.
+- [x] **MVP-0807** Implement rolling health aggregates.
+- [x] **MVP-0808** Update endpoint availability and cooldown signals.
+- [x] **MVP-0809** Add a read-only routing and execution report.
+- [x] **MVP-0810** Keep adaptive policy changes disabled by default until enough data exists.
 
 #### Acceptance criteria
 
@@ -495,18 +493,18 @@ Aggregate and Return
 
 #### Tasks
 
-- [ ] **MVP-0901** Implement authenticated task submission.
-- [ ] **MVP-0902** Implement Provider onboarding endpoints.
-- [ ] **MVP-0903** Implement model catalog endpoints.
-- [ ] **MVP-0904** Implement Agent Profile and Pool read APIs.
-- [ ] **MVP-0905** Implement route-preview and route-explanation APIs.
-- [ ] **MVP-0906** Implement workflow status and event streaming.
-- [ ] **MVP-0907** Implement cancellation.
-- [ ] **MVP-0908** Redact secrets from logs, traces, and model metadata.
-- [ ] **MVP-0909** Add authorization for Provider management, tools, and execution.
-- [ ] **MVP-0910** Add rate limits and request-size limits.
-- [ ] **MVP-0911** Add prompt-injection and unsafe-tool-input boundaries.
-- [ ] **MVP-0912** Document local installation and first-run setup.
+- [x] **MVP-0901** Implement authenticated task submission.
+- [x] **MVP-0902** Implement Provider onboarding endpoints.
+- [x] **MVP-0903** Implement model catalog endpoints.
+- [x] **MVP-0904** Implement Agent Profile and Pool read APIs.
+- [x] **MVP-0905** Implement route-preview and route-explanation APIs.
+- [x] **MVP-0906** Implement workflow status and event streaming.
+- [x] **MVP-0907** Implement cancellation.
+- [x] **MVP-0908** Redact secrets from logs, traces, and model metadata.
+- [x] **MVP-0909** Add authorization for Provider management, tools, and execution.
+- [x] **MVP-0910** Add rate limits and request-size limits.
+- [x] **MVP-0911** Add prompt-injection and unsafe-tool-input boundaries.
+- [x] **MVP-0912** Document local installation and first-run setup.
 
 #### Minimum API surface
 
@@ -542,20 +540,20 @@ GET  /api/routing/decisions/{id}
 
 #### Tasks
 
-- [ ] **MVP-1001** Add unit tests for all domain contracts.
-- [ ] **MVP-1002** Add Model Registry normalization tests.
-- [ ] **MVP-1003** Add source-conflict and stale-data tests.
-- [ ] **MVP-1004** Add Pool Builder tests.
-- [ ] **MVP-1005** Add Router scoring and explainability tests.
-- [ ] **MVP-1006** Add Gateway Adapter contract tests using a fake gateway.
-- [ ] **MVP-1007** Add OmniRoute integration tests.
-- [ ] **MVP-1008** Add LangGraph workflow tests.
-- [ ] **MVP-1009** Add retry, fallback, timeout, and cancellation tests.
-- [ ] **MVP-1010** Add tool sandbox and permission tests.
-- [ ] **MVP-1011** Add end-to-end tests for Planner → Coder → Reviewer.
-- [ ] **MVP-1012** Add failure-injection tests for Provider outage and model unavailability.
-- [ ] **MVP-1013** Add a smoke test for a clean installation.
-- [ ] **MVP-1014** Document known limitations and operational runbooks.
+- [x] **MVP-1001** Add unit tests for all domain contracts.
+- [x] **MVP-1002** Add Model Registry normalization tests.
+- [x] **MVP-1003** Add source-conflict and stale-data tests.
+- [x] **MVP-1004** Add Pool Builder tests.
+- [x] **MVP-1005** Add Router scoring and explainability tests.
+- [x] **MVP-1006** Add Gateway Adapter contract tests using a fake gateway.
+- [x] **MVP-1007** Add OmniRoute integration tests.
+- [x] **MVP-1008** Add LangGraph workflow tests.
+- [x] **MVP-1009** Add retry, fallback, timeout, and cancellation tests.
+- [x] **MVP-1010** Add tool sandbox and permission tests.
+- [x] **MVP-1011** Add end-to-end tests for Planner → Coder → Reviewer.
+- [x] **MVP-1012** Add failure-injection tests for Provider outage and model unavailability.
+- [x] **MVP-1013** Add a smoke test for a clean installation.
+- [x] **MVP-1014** Document known limitations and operational runbooks.
 
 ## 7. Dependency Graph
 
@@ -583,23 +581,23 @@ Phase 2 may begin with a fake Gateway Adapter while the real OmniRoute integrati
 
 The MVP is complete only when all of the following are true:
 
-- [ ] The platform starts OmniRoute as a managed internal service.
-- [ ] At least two Providers can be configured through the platform boundary.
-- [ ] Provider models are discovered and stored locally.
-- [ ] Models are grouped by Family, Variant, and Provider Endpoint.
-- [ ] Capabilities and provenance are visible through the Model Registry.
-- [ ] Planner, Developer/Coder, and Reviewer profiles exist by default.
-- [ ] Coder and Planner Pools are generated automatically.
-- [ ] Users can customize or reset defaults.
-- [ ] The Router applies hard constraints before weighted scoring.
-- [ ] Every route has a human-readable explanation.
-- [ ] A request can execute through a real LangGraph workflow.
-- [ ] The workflow uses OmniRoute for model execution.
-- [ ] The workflow can retry, fallback, pause, resume, and cancel.
-- [ ] At least one repository tool and one test tool are sandboxed and permissioned.
-- [ ] Execution and routing telemetry is persisted asynchronously.
-- [ ] The end-to-end test passes with a simulated Provider failure.
-- [ ] The platform can be installed from a clean environment using documented steps.
+- [x] The platform starts OmniRoute as a managed internal service.
+- [x] At least two Providers can be configured through the platform boundary.
+- [x] Provider models are discovered and stored locally.
+- [x] Models are grouped by Family, Variant, and Provider Endpoint.
+- [x] Capabilities and provenance are visible through the Model Registry.
+- [x] Planner, Developer/Coder, and Reviewer profiles exist by default.
+- [x] Coder and Planner Pools are generated automatically.
+- [x] Users can customize or reset defaults.
+- [x] The Router applies hard constraints before weighted scoring.
+- [x] Every route has a human-readable explanation.
+- [x] A request can execute through a real LangGraph workflow.
+- [x] The workflow uses OmniRoute for model execution.
+- [x] The workflow can retry, fallback, pause, resume, and cancel.
+- [x] At least one repository tool and one test tool are sandboxed and permissioned.
+- [x] Execution and routing telemetry is persisted asynchronously.
+- [x] The end-to-end test passes with a simulated Provider failure.
+- [x] The platform can be installed from a clean environment using documented steps.
 
 ## 9. Post-MVP Extensions
 

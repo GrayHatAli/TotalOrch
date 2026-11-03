@@ -157,3 +157,23 @@ async def test_models_endpoint_classifies_virtual_automatic_alias_and_concrete_e
         "alias/coding:alias/coding": ModelKind.alias,
         "openai/gpt-4o:gpt-4o": ModelKind.concrete,
     }
+
+
+@pytest.mark.asyncio
+async def test_gateway_lifecycle_metadata_is_normalized() -> None:
+    catalog = {
+        "data": [
+            {"id": "openai/gpt-4o", "context_length": 128000, "deprecated": True},
+            {"id": "openai/gpt-5", "context_length": 128000, "status": "preview"},
+        ]
+    }
+    adapter = OpenAICompatAdapter(
+        base_url="http://router.test",
+        transport=StubTransport(responses(catalog, 2)),
+    )
+    source = GatewayCatalogSource(adapter, IdentityRules())
+
+    batch = await source.fetch()
+
+    assert batch.variants[0].fields["lifecycle_state"].value == "deprecated"
+    assert batch.variants[1].fields["lifecycle_state"].value == "preview"

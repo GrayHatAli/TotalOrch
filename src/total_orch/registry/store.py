@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS source_seen (
     last_seen_at TEXT NOT NULL,
     PRIMARY KEY (entity_kind, entity_id, source)
 );
+CREATE TABLE IF NOT EXISTS field_overrides (
+    entity_kind TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    field TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id, field)
+);
 """
 
 
@@ -436,3 +444,56 @@ class ModelRegistryStore:
             (kind, entity_id),
         ).fetchall()
         return [str(row["source"]) for row in rows]
+
+    # -- manual overrides ---------------------------------------------------
+
+    def set_override(self, kind: EntityKind, entity_id: str, field: str, value: object) -> None:
+        self._connection.execute(
+            "INSERT INTO field_overrides (entity_kind, entity_id, field, value, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(entity_kind, entity_id, field) DO UPDATE SET "
+            "value = excluded.value, updated_at = excluded.updated_at",
+            (kind, entity_id, field, json.dumps(value, ensure_ascii=False), _utc_iso()),
+        )
+        self._connection.commit()
+
+    def delete_override(self, kind: EntityKind, entity_id: str, field: str) -> bool:
+        cursor = self._connection.execute(
+            "DELETE FROM field_overrides WHERE entity_kind = ? AND entity_id = ? AND field = ?",
+            (kind, entity_id, field),
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    def overrides_for(self, kind: EntityKind, entity_id: str) -> dict[str, object]:
+        rows = self._connection.execute(
+            "SELECT field, value FROM field_overrides WHERE entity_kind = ? AND entity_id = ?",
+            (kind, entity_id),
+        ).fetchall()
+        return {str(row["field"]): json.loads(str(row["value"])) for row in rows}
+
+    def list_overrides(self, *, kind: EntityKind | None = None, entity_id: str | None = None) -> list[dict[str, object]]:
+        clauses: list[str] = []
+        params: list[str] = []
+        if kind is not None:
+            clauses.append("entity_kind = ?")
+            params.append(kind)
+        if entity_id is not None:
+            clauses.append("entity_id = ?")
+            params.append(entity_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._connection.execute(
+            f"SELECT entity_kind, entity_id, field, value, updated_at FROM field_overrides {where} "
+            "ORDER BY entity_kind, entity_id, field",
+            params,
+        ).fetchall()
+        return [
+            {
+                "kind": str(row["entity_kind"]),
+                "id": str(row["entity_id"]),
+                "field": str(row["field"]),
+                "value": json.loads(str(row["value"])),
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in rows
+        ]

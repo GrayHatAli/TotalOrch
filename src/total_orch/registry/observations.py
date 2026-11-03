@@ -34,6 +34,7 @@ VariantField = Literal[
     "context_window",
     "max_output_tokens",
     "model_kind",
+    "lifecycle_state",
     CapabilityField,
 ]
 

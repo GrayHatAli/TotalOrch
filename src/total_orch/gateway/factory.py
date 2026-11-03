@@ -13,6 +13,7 @@ from typing import Any
 
 from total_orch.config import Settings
 
+from .anthropic import AnthropicAdapter
 from .base import GatewayAdapter
 from .omniroute import OmniRouteAdapter
 from .openai_compat import OpenAICompatAdapter
@@ -37,6 +38,14 @@ def build_gateway(
     gateway_type = settings.gateway_type.strip().lower()
     if gateway_type in {"", "omniroute"}:
         return OmniRouteAdapter(settings, transport=transport)
+    if gateway_type == "anthropic":
+        return AnthropicAdapter(
+            api_key=settings.gateway_api_key,
+            base_url=settings.gateway_base_url or "https://api.anthropic.com",
+            timeout_seconds=settings.gateway_timeout_seconds,
+            max_retries=settings.gateway_max_retries,
+            transport=transport,
+        )
     return OpenAICompatAdapter.for_router(
         gateway_type,
         settings=settings,
@@ -47,4 +56,4 @@ def build_gateway(
 def supported_gateway_types() -> tuple[str, ...]:
     """Gateway discriminators accepted by :func:`build_gateway`."""
 
-    return ("omniroute", "litellm", "9router", "oneapi", "newapi", "freellmapi")
+    return ("omniroute", "litellm", "9router", "oneapi", "newapi", "freellmapi", "anthropic")

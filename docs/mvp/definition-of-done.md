@@ -19,7 +19,8 @@ The first implementation slice is complete when:
   or event records.
 - The managed deployment contract and external OmniRoute mode are documented.
 
-Not yet claimed by this slice: live end-to-end connectivity to a real
-OmniRoute instance, Model Registry persistence, automatic Agent Pool building,
-semantic Router scoring, or LangGraph workflow execution. Those belong to
-later phases or require a configured live environment.
+This document describes the original phases 0–2 slice. Later phases added
+Model Registry persistence, automatic Agent Pool building, semantic Router
+scoring, the LangGraph workflow runtime, repository tools, telemetry, and the
+public task API. Live end-to-end connectivity to a real OmniRoute instance
+still requires a configured live environment and real credentials.

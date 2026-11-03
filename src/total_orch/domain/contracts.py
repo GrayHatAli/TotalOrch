@@ -67,6 +67,7 @@ class ProviderConnection(Contract):
 
 
 ReasoningEffort = Literal["low", "medium", "high", "ultra"]
+ModelLifecycle = Literal["active", "preview", "deprecated", "retired"]
 
 
 class ModelKind(StrEnum):
@@ -116,6 +117,7 @@ class ModelVariant(Contract):
     context_window: int | None = Field(default=None, gt=0)
     max_output_tokens: int | None = Field(default=None, gt=0)
     model_kind: ModelKind | None = None
+    lifecycle_state: ModelLifecycle | None = None
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
     provenance: tuple[SourceProvenance, ...] = ()
     schema_version: int = Field(default=1, ge=1)
@@ -244,6 +246,7 @@ class RouteDecision(Contract):
 class WorkflowStatus(StrEnum):
     pending = "pending"
     running = "running"
+    paused = "paused"
     completed = "completed"
     failed = "failed"
     cancelled = "cancelled"

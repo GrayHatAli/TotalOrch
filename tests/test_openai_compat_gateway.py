@@ -406,7 +406,15 @@ def test_for_router_accepts_unknown_router_names() -> None:
 
 
 def test_supported_gateway_types_lists_defaults() -> None:
-    assert supported_gateway_types() == ("omniroute", "litellm", "9router", "oneapi", "newapi", "freellmapi")
+    assert supported_gateway_types() == (
+        "omniroute",
+        "litellm",
+        "9router",
+        "oneapi",
+        "newapi",
+        "freellmapi",
+        "anthropic",
+    )
 
 
 def test_build_gateway_selects_omniroute_by_default() -> None:

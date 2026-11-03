@@ -36,6 +36,7 @@ from total_orch.gateway import (
     build_gateway,
 )
 from total_orch.gateway.models import ChatMessage
+from total_orch.observability import configure_logging
 from total_orch.profiles import (
     BUILTIN_AGENT_DEFINITIONS,
     PoolBuilder,
@@ -154,8 +155,22 @@ class TotalOrchApplication:
                 return self._provenance_response(parse_qs(parsed.query))
             if method == "GET" and path == "/v1/registry/stale":
                 return self._stale_response(parse_qs(parsed.query))
+            if method == "GET" and path == "/v1/registry/overrides":
+                return self._overrides_response(parse_qs(parsed.query))
+            if method == "POST" and path == "/v1/registry/overrides":
+                return self._set_override(body)
+            if method == "DELETE" and path.startswith("/v1/registry/overrides/"):
+                parts = path.removeprefix("/v1/registry/overrides/").split("/")
+                if len(parts) != 3:
+                    raise ValueError("override path must be /v1/registry/overrides/{kind}/{id}/{field}")
+                kind, entity_id, field = (unquote(part) for part in parts)
+                if not self.registry.delete_override(cast(EntityKind, kind), entity_id, field):
+                    return ApiResponse(HTTPStatus.NOT_FOUND, {"error": {"message": "override not found"}})
+                return ApiResponse(HTTPStatus.NO_CONTENT, {})
             if method == "POST" and path == "/v1/registry/sync":
                 return self._sync_registry()
+            if method == "GET" and path == "/v1/registry/sync/status":
+                return self._sync_status()
             if method == "GET" and path == "/v1/auth/keys":
                 return ApiResponse(HTTPStatus.OK, {"data": self.registry.store.list_api_keys()})
             if method == "POST" and path == "/v1/auth/keys":
@@ -343,6 +358,29 @@ class TotalOrchApplication:
             },
         )
 
+    def _overrides_response(self, query: Mapping[str, list[str]]) -> ApiResponse:
+        kind = query.get("kind", [None])[0]
+        if kind is not None and kind not in {"family", "variant", "endpoint"}:
+            raise ValueError("kind must be family, variant, or endpoint")
+        overrides = self.registry.list_overrides(
+            kind=cast(EntityKind, kind) if kind is not None else None,
+            entity_id=query.get("id", [None])[0],
+        )
+        return ApiResponse(HTTPStatus.OK, {"data": overrides})
+
+    def _set_override(self, body: bytes) -> ApiResponse:
+        payload = self._json_object(body)
+        kind = str(payload.get("kind", ""))
+        entity_id = str(payload.get("id", ""))
+        field = str(payload.get("field", ""))
+        if not kind or not entity_id or not field or "value" not in payload:
+            raise ValueError("kind, id, field, and value are required")
+        self.registry.set_override(cast(EntityKind, kind), entity_id, field, payload["value"])
+        return ApiResponse(
+            HTTPStatus.CREATED,
+            {"data": {"kind": kind, "id": entity_id, "field": field, "value": payload["value"]}},
+        )
+
     def _export_connections(self) -> ApiResponse:
         connections = self.registry.store.list_connections()
         return ApiResponse(
@@ -506,6 +544,8 @@ class TotalOrchApplication:
             return self._task_status(workflow_id)
         if method == "GET" and action == "events":
             return ApiResponse(HTTPStatus.OK, {"data": self._workflow_service.events(workflow_id)})
+        if method == "POST" and action == "pause":
+            return self._task_pause(workflow_id)
         if method == "POST" and action == "cancel":
             return self._task_cancel(workflow_id)
         if method == "POST" and action == "resume":
@@ -519,6 +559,16 @@ class TotalOrchApplication:
         if run is None:
             return ApiResponse(HTTPStatus.NOT_FOUND, {"error": {"message": "workflow not found"}})
         return ApiResponse(HTTPStatus.OK, {"data": run})
+
+    def _task_pause(self, workflow_id: str) -> ApiResponse:
+        run = self._workflow_service.get(workflow_id)
+        if run is None:
+            return ApiResponse(HTTPStatus.NOT_FOUND, {"error": {"message": "workflow not found"}})
+        if str(run.get("status")) in {"completed", "failed", "cancelled"}:
+            return ApiResponse(HTTPStatus.CONFLICT, {"error": {"message": "workflow is already terminal"}})
+        if not self._workflow_service.pause(workflow_id):
+            return ApiResponse(HTTPStatus.CONFLICT, {"error": {"message": "workflow could not be paused"}})
+        return ApiResponse(HTTPStatus.ACCEPTED, {"data": {"workflow_id": workflow_id, "status": "pause_requested"}})
 
     def _task_cancel(self, workflow_id: str) -> ApiResponse:
         run = self._workflow_service.get(workflow_id)
@@ -557,9 +607,9 @@ class TotalOrchApplication:
         if path.endswith("/counts"):
             return ApiResponse(HTTPStatus.OK, self._counts())
         provider = query.get("provider", [None])[0]
-        families = {family.id: family for family in self.registry.store.list_families()}
-        variants = self.registry.store.list_variants()
-        endpoints = self.registry.store.list_endpoints(provider=provider)
+        families = {family.id: family for family in self.registry.list_families()}
+        variants = self.registry.list_variants()
+        endpoints = self.registry.list_endpoints(provider=provider)
         return ApiResponse(
             HTTPStatus.OK,
             {
@@ -568,9 +618,11 @@ class TotalOrchApplication:
                     {
                         "id": variant.id,
                         "object": "model",
+                        "display_name": variant.display_name,
                         "owned_by": self._family_publisher(families, variant.family_id),
                         "context_window": variant.context_window,
                         "model_kind": variant.model_kind.value if variant.model_kind is not None else None,
+                        "lifecycle_state": variant.lifecycle_state,
                     }
                     for variant in variants
                 ],
@@ -597,6 +649,31 @@ class TotalOrchApplication:
                     for result in summary.sources
                 ],
                 "counts": self._counts(),
+            },
+        )
+
+    def _sync_status(self) -> ApiResponse:
+        summary = self.registry.last_sync
+        if summary is None:
+            return ApiResponse(HTTPStatus.OK, {"data": None, "message": "no sync has run in this process"})
+        return ApiResponse(
+            HTTPStatus.OK,
+            {
+                "data": {
+                    "succeeded": summary.succeeded,
+                    "started_at": summary.started_at.isoformat(),
+                    "finished_at": summary.finished_at.isoformat(),
+                    "sources": [
+                        {
+                            "source": result.source,
+                            "status": result.status,
+                            "error": result.error,
+                            "error_kind": result.error_kind,
+                        }
+                        for result in summary.sources
+                    ],
+                    "entity_errors": list(summary.entity_errors),
+                }
             },
         )
 
@@ -998,5 +1075,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
     settings = Settings.from_env()
+    configure_logging(settings.log_level)
+    logger.info("starting total-orch", extra={"event": json.dumps(settings.redacted())})
     application = create_application(settings)
     application.serve(args.host or settings.total_orch_host, args.port or settings.total_orch_port)

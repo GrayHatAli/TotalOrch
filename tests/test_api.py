@@ -408,3 +408,34 @@ def test_health_reports_startup_checks_and_rate_limit_rejects_bursts() -> None:
     assert any(check["name"] == "gateway" for check in health.body["checks"])
     assert first.status_code == 200
     assert second.status_code == 429
+
+
+def test_manual_registry_override_wins_over_catalog_metadata() -> None:
+    app = task_application()
+    headers = {"Authorization": "Bearer totalorch-test"}
+
+    created = app.handle(
+        "POST",
+        "/v1/registry/overrides",
+        headers=headers,
+        body=json.dumps(
+            {
+                "kind": "variant",
+                "id": "openai/gpt:gpt-test",
+                "field": "display_name",
+                "value": "Manual Name",
+            }
+        ).encode(),
+    )
+    models = app.handle("GET", "/v1/models", headers=headers)
+    listed = app.handle("GET", "/v1/registry/overrides", headers=headers)
+    deleted = app.handle(
+        "DELETE",
+        "/v1/registry/overrides/variant/openai%2Fgpt%3Agpt-test/display_name",
+        headers=headers,
+    )
+
+    assert created.status_code == 201
+    assert models.body["data"][0]["display_name"] == "Manual Name"
+    assert listed.body["data"][0]["field"] == "display_name"
+    assert deleted.status_code == 204

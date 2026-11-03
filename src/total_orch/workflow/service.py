@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from threading import Lock, Thread
 from uuid import uuid4
@@ -11,6 +12,8 @@ from total_orch.telemetry import TelemetryStore, WorkflowRun
 
 from .models import WorkflowOutcome, WorkflowRequest
 from .runtime import WorkflowRuntime
+
+logger = logging.getLogger("total_orch.workflow")
 
 
 class WorkflowService:
@@ -75,14 +78,32 @@ class WorkflowService:
             return self.telemetry.events_for(workflow_id)
         return [event.model_dump(mode="json") for event in self.runtime.events(workflow_id)]
 
+    def pause(self, workflow_id: str) -> bool:
+        return asyncio.run(self.runtime.pause(workflow_id))
+
     def cancel(self, workflow_id: str) -> bool:
         return asyncio.run(self.runtime.cancel(workflow_id))
 
     def resume(self, workflow_id: str) -> WorkflowOutcome:
-        return asyncio.run(self.runtime.resume(workflow_id))
+        outcome = asyncio.run(self.runtime.resume(workflow_id))
+        self._finish(outcome)
+        return outcome
 
     def replay(self, workflow_id: str) -> WorkflowOutcome:
-        return asyncio.run(self.runtime.replay(workflow_id))
+        outcome = asyncio.run(self.runtime.replay(workflow_id))
+        self._finish(outcome)
+        return outcome
+
+    def _finish(self, outcome: WorkflowOutcome) -> None:
+        if self.telemetry is None:
+            return
+        self.telemetry.finish_run(
+            outcome.workflow_id,
+            status=outcome.result.status.value,
+            finished_at=outcome.result.completed_at or datetime.now(UTC),
+            error_code=outcome.result.error_code,
+            result=outcome.result.model_dump(mode="json"),
+        )
 
     def _execute(self, workflow_id: str, request: WorkflowRequest) -> None:
         outcome: WorkflowOutcome | None = None

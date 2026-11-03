@@ -23,7 +23,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import NoReturn, Protocol, TypeVar
 
 from total_orch.domain import ModelFamily, ModelVariant, ProviderEndpoint, SourceProvenance
 from total_orch.gateway import GatewayError
@@ -37,6 +37,18 @@ from .observations import (
     VariantObservation,
 )
 from .store import EntityKind, ModelRegistryStore
+
+TRecord = TypeVar("TRecord", ModelFamily, ModelVariant, ProviderEndpoint)
+
+_OVERRIDE_FIELDS: dict[EntityKind, frozenset[str]] = {
+    "family": frozenset({"publisher", "display_name"}),
+    "variant": frozenset(
+        {"display_name", "description", "context_window", "max_output_tokens", "model_kind", "lifecycle_state"}
+    ),
+    "endpoint": frozenset(
+        {"health", "latency_p95_ms", "input_cost_per_million", "output_cost_per_million", "quota_remaining"}
+    ),
+}
 
 
 class CatalogSource(Protocol):
@@ -106,6 +118,7 @@ class ModelRegistryService:
         self._store = store
         self._rules = rules
         self._sources: list[CatalogSource] = list(sources)
+        self._last_sync: SyncSummary | None = None
 
     @property
     def store(self) -> ModelRegistryStore:
@@ -133,7 +146,7 @@ class ModelRegistryService:
         variants_upserted = self._upsert_variants(groups.variants, started_at, entity_errors)
         endpoints_upserted = self._upsert_endpoints(groups.endpoints, started_at, entity_errors)
 
-        return SyncSummary(
+        summary = SyncSummary(
             started_at=started_at,
             finished_at=datetime.now(UTC),
             sources=tuple(results),
@@ -142,6 +155,8 @@ class ModelRegistryService:
             endpoints_upserted=endpoints_upserted,
             entity_errors=tuple(entity_errors),
         )
+        self._last_sync = summary
+        return summary
 
     async def _fetch_one(self, source: CatalogSource) -> tuple[SourceSyncResult, CatalogBatch | None]:
         try:
@@ -280,13 +295,20 @@ class ModelRegistryService:
             changed = changed or row_changed
         return changed
 
+    @property
+    def last_sync(self) -> SyncSummary | None:
+        return self._last_sync
+
     # -- queries (MVP-0315) --------------------------------------------------
 
     def list_families(self) -> list[ModelFamily]:
-        return self._store.list_families()
+        return [self._apply_overrides("family", family) for family in self._store.list_families()]
 
     def list_variants(self, family_id: str | None = None) -> list[ModelVariant]:
-        return self._store.list_variants(family_id=family_id)
+        return [
+            self._apply_overrides("variant", variant)
+            for variant in self._store.list_variants(family_id=family_id)
+        ]
 
     def list_endpoints(
         self,
@@ -294,19 +316,68 @@ class ModelRegistryService:
         model_variant_id: str | None = None,
         provider: str | None = None,
     ) -> list[ProviderEndpoint]:
-        return self._store.list_endpoints(model_variant_id=model_variant_id, provider=provider)
+        return [
+            self._apply_overrides("endpoint", endpoint)
+            for endpoint in self._store.list_endpoints(model_variant_id=model_variant_id, provider=provider)
+        ]
 
     def get_family(self, family_id: str) -> ModelFamily:
-        for family in self._store.list_families():
+        for family in self.list_families():
             if family.id == family_id:
                 return family
         raise KeyError(f"unknown model family: {family_id}")
 
     def get_variant(self, variant_id: str) -> ModelVariant:
-        return self._store.get_variant(variant_id)
+        return self._apply_overrides("variant", self._store.get_variant(variant_id))
 
     def get_endpoint(self, endpoint_id: str) -> ProviderEndpoint:
-        return self._store.get_endpoint(endpoint_id)
+        return self._apply_overrides("endpoint", self._store.get_endpoint(endpoint_id))
+
+    def set_override(self, kind: EntityKind, entity_id: str, field: str, value: object) -> None:
+        """Store a manual field override after validating it against the record."""
+        if kind not in _OVERRIDE_FIELDS:
+            raise ValueError(f"unknown override kind: {kind}")
+        if field not in _OVERRIDE_FIELDS[kind]:
+            raise ValueError(f"field {field!r} cannot be overridden for {kind}")
+        record = self._raw_record(kind, entity_id)
+        data = record.model_dump()
+        data[field] = value
+        self._validate_record(kind, data)
+        self._store.set_override(kind, entity_id, field, value)
+
+    def delete_override(self, kind: EntityKind, entity_id: str, field: str) -> bool:
+        if kind not in _OVERRIDE_FIELDS:
+            raise ValueError(f"unknown override kind: {kind}")
+        return self._store.delete_override(kind, entity_id, field)
+
+    def list_overrides(self, *, kind: EntityKind | None = None, entity_id: str | None = None) -> list[dict[str, object]]:
+        return self._store.list_overrides(kind=kind, entity_id=entity_id)
+
+    def _raw_record(self, kind: EntityKind, entity_id: str) -> ModelFamily | ModelVariant | ProviderEndpoint:
+        if kind == "family":
+            return next((family for family in self._store.list_families() if family.id == entity_id), None) or _missing(kind, entity_id)
+        if kind == "variant":
+            return self._store.get_variant(entity_id)
+        return self._store.get_endpoint(entity_id)
+
+    @staticmethod
+    def _validate_record(kind: EntityKind, data: dict[str, object]) -> None:
+        if kind == "family":
+            ModelFamily.model_validate(data)
+        elif kind == "variant":
+            ModelVariant.model_validate(data)
+        else:
+            ProviderEndpoint.model_validate(data)
+
+    def _apply_overrides(self, kind: EntityKind, record: TRecord) -> TRecord:
+        overrides = {
+            field: value
+            for field, value in self._store.overrides_for(kind, record.id).items()
+            if field in _OVERRIDE_FIELDS[kind]
+        }
+        if not overrides:
+            return record
+        return record.model_copy(update=overrides)
 
     def resolve_variant(self, provider: str | None, model_name: str) -> ModelVariant:
         """Resolve a provider model name onto its canonical variant record."""
@@ -351,3 +422,7 @@ def classify_sync_error(exc: BaseException) -> str:
     if type(exc).__name__ in {"HTTPStatusError", "HTTPError", "ConnectError", "ReadTimeout", "ConnectTimeout"}:
         return "provider"
     return "unknown"
+
+
+def _missing(kind: EntityKind, entity_id: str) -> NoReturn:
+    raise KeyError(f"unknown {kind}: {entity_id}")

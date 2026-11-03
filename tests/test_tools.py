@@ -137,3 +137,82 @@ def _git(workspace: Path, *args: str) -> None:
         capture_output=True,
         text=True,
     )
+
+
+def test_mcp_stdio_spike_initializes_lists_and_calls_one_read_only_tool(tmp_path: Path) -> None:
+    server = tmp_path / "server.py"
+    server.write_text(
+        """
+import json
+import sys
+
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    method = message.get("method")
+    if method == "initialize":
+        result = {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "fake"}}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "read_file", "description": "Read a file"}]}
+    elif method == "tools/call":
+        result = {"content": [{"type": "text", "text": "hello from mcp"}]}
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result}), flush=True)
+""",
+        encoding="utf-8",
+    )
+
+    from total_orch.tools import McpStdioClient
+
+    with McpStdioClient(
+        (sys.executable, str(server)),
+        allowed_tools=frozenset({"read_file"}),
+    ) as client:
+        initialized = client.initialize()
+        tools = client.list_tools()
+        called = client.call_tool("read_file", {"path": "README.md"})
+        with pytest.raises(ToolError, match="allowlisted"):
+            client.call_tool("write_file", {})
+
+    assert initialized["serverInfo"]["name"] == "fake"
+    assert tools[0]["name"] == "read_file"
+    assert called["content"][0]["text"] == "hello from mcp"
+
+
+def test_cancel_terminates_a_running_tool(tmp_path: Path) -> None:
+    import threading
+    import time
+
+    tools = ToolManager(
+        str(_workspace(tmp_path)),
+        test_command=(sys.executable, "-c", "import time; time.sleep(5)"),
+        timeout_seconds=10,
+    )
+    finished = threading.Event()
+
+    def run() -> None:
+        try:
+            tools.run_tests("tester")
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    time.sleep(0.2)
+    tools.cancel()
+    worker.join(timeout=3)
+
+    assert worker.is_alive() is False
+    assert finished.is_set()
+
+
+def test_project_metadata_summarizes_the_repository(tmp_path: Path) -> None:
+    tools = ToolManager(str(_workspace(tmp_path)))
+
+    result = tools.project_metadata("planner")
+
+    assert result.ok is True
+    assert '"files":' in result.output
+    assert '".py"' in result.output

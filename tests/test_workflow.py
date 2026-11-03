@@ -370,3 +370,63 @@ def test_apply_changes_is_opt_in_and_uses_an_approved_tool() -> None:
     assert outcome.state["apply"]["ok"] is True
     assert tools.applied == ["+def health(): return 'ok'"]
     assert any(event.event_type == "workflow.patch_applied" for event in outcome.events)
+
+
+def test_model_timeout_fails_the_run_with_a_normalized_error() -> None:
+    gateway = ScriptedGateway(_scripts())
+    gateway.delay = 0.2
+    runtime = WorkflowRuntime(
+        _registry(_endpoint("openai/gpt-test", health=0.9)),
+        gateway,
+        settings=Settings(
+            environment="test",
+            workflow_max_attempts=1,
+            workflow_node_timeout_seconds=0.01,
+        ),
+    )
+
+    outcome = asyncio.run(
+        WorkflowRuntime.start(runtime, WorkflowRequest(request="Add a feature", run_tests=False))
+    )
+
+    assert outcome.result.status is WorkflowStatus.failed
+    assert outcome.result.error_code == "gateway_exhausted"
+
+
+def test_replay_creates_a_new_run_linked_to_the_failed_one() -> None:
+    runtime = _runtime()
+    original = asyncio.run(
+        WorkflowRuntime.start(runtime, WorkflowRequest(request="Add a feature", run_tests=False))
+    )
+
+    replayed = asyncio.run(runtime.replay(original.workflow_id))
+
+    assert replayed.result.status is WorkflowStatus.completed
+    assert replayed.workflow_id != original.workflow_id
+    assert replayed.result.output["replay_of"] == original.workflow_id
+
+
+def test_workflow_can_pause_before_review_and_resume_from_checkpoint() -> None:
+    gateway = ScriptedGateway(_scripts())
+    gateway.delay = 0.05
+    runtime = _runtime(gateway=gateway)
+
+    async def run() -> tuple[Any, Any]:
+        task = asyncio.create_task(
+            WorkflowRuntime.start(
+                runtime,
+                WorkflowRequest(request="Add a feature", run_tests=False),
+                workflow_id="wf-pause",
+            )
+        )
+        await asyncio.sleep(0.01)
+        assert await runtime.pause("wf-pause") is True
+        paused = await task
+        resumed = await runtime.resume("wf-pause")
+        return paused, resumed
+
+    paused, resumed = asyncio.run(run())
+
+    assert paused.result.status is WorkflowStatus.paused
+    assert paused.result.completed_at is None
+    assert resumed.result.status is WorkflowStatus.completed

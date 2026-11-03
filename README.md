@@ -12,8 +12,9 @@ One API / New API, FreeLLMAPI, and similar proxies — works through the same
 
 The current implementation covers the foundation, domain contracts, the
 Gateway Adapter boundary, the Model Intelligence Registry, default Agent
-Profiles with automatic Model Pool generation, and the explainable Router
-from MVP phases 0–5.
+Profiles with automatic Model Pool generation, the explainable Router, the
+LangGraph workflow runtime, sandboxed repository tools, telemetry, and the
+public task/routing API from MVP phases 0–10.
 
 The registry can ingest a gateway's standard model catalog through
 `ModelsEndpointCatalogSource`, which uses `GatewayAdapter.list_models()` only.
@@ -48,13 +49,32 @@ environments. The API provides:
 - `POST /v1/providers/connections/{id}/health`
 - `POST /v1/chat/completions` as an OpenAI-compatible execution facade,
   including SSE streaming
+- `POST /v1/tasks`, task status, event streaming, cancellation, resume, and
+  replay for the LangGraph Planner → Developer/Coder → Reviewer workflow
+- `GET /v1/models/families`, `GET /v1/models/pools`, `GET /v1/agents/profiles`,
+  `POST /v1/routing/preview`, and persisted route-decision queries
+- registry provenance, staleness, manual field overrides, and last-sync status
+- `GET /v1/telemetry/report` and `GET /v1/telemetry/metrics`
 
 Provider connections store only metadata and a reference such as
 `env://OPENAI_API_KEY`; raw API keys are rejected by the public API and are
 never returned in responses. The current resolver reads environment-backed
 references at runtime. Connections with a `base_url` use a direct
 OpenAI-compatible adapter for completion and streaming; connections without
-one use the configured gateway.
+one use the configured gateway. `GATEWAY_TYPE=anthropic` selects the direct
+Anthropic Messages adapter, including streaming and tool calls.
+
+Task submissions run the LangGraph workflow off the request thread. Every
+node is checkpointed; model calls use node-level retry and routed endpoint
+fallback, while cancellation, timeouts, and replay are explicit API actions.
+Repository tools are available only when `ORCHESTRATOR_WORKSPACE_ROOT` is set:
+file inspection, git status/diff, a validated patch application, and a fixed
+test command with timeout and output limits. Patch application is disabled by
+default and requires `ORCHESTRATOR_WORKFLOW_APPLY_CHANGES=true`.
+
+Telemetry writes are queued to a background SQLite writer. Endpoint health
+(cooldown after repeated failures), token usage, estimated cost, fallback use,
+and the per-run result are queryable through the telemetry report.
 
 ## Development setup
 
@@ -143,4 +163,6 @@ reimplement provider adapters.
 - `total_orch.credentials`: environment-backed secret-reference resolver;
   raw credential values are intentionally outside the registry.
 
-LangGraph workflow nodes are intentionally left for the next MVP phase.
+The workflow runtime lives in `total_orch.workflow`; repository tools in
+`total_orch.tools`; the async execution ledger in `total_orch.telemetry`.
+Operational details are in [`docs/runbook.md`](docs/runbook.md).

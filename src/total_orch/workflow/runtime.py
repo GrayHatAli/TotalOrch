@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 from total_orch.config import Settings
 from total_orch.domain import (
@@ -159,6 +160,7 @@ class WorkflowRuntime:
         self._event_sink = event_sink
         self._events: dict[str, list[ExecutionEvent]] = {}
         self._cancelled: set[str] = set()
+        self._pause_requests: set[str] = set()
         self._graph = self._build_graph()
 
     # -- public API ---------------------------------------------------------
@@ -213,6 +215,9 @@ class WorkflowRuntime:
                 WorkflowStatus.failed,
                 {"error": message},
             )
+        snapshot = await self._graph.aget_state(config)
+        if snapshot.interrupts:
+            await self._graph.aupdate_state(config, {"status": WorkflowStatus.paused.value})
         state = await self._read_state(workflow_id)
         return self._outcome(workflow_id, state)
 
@@ -223,12 +228,19 @@ class WorkflowRuntime:
         snapshot = await self._graph.aget_state(config)
         if not snapshot.values:
             raise KeyError(f"unknown workflow: {workflow_id}")
-        if snapshot.values.get("status") in _TERMINAL:
-            await self._graph.aupdate_state(
-                config,
-                {"status": WorkflowStatus.running.value, "error_code": None},
-            )
-        await self._graph.ainvoke(None, config)
+        self._pause_requests.discard(workflow_id)
+        if snapshot.interrupts or snapshot.values.get("status") == WorkflowStatus.paused.value:
+            await self._graph.ainvoke(Command(resume=True), config)
+        else:
+            if snapshot.values.get("status") in _TERMINAL:
+                await self._graph.aupdate_state(
+                    config,
+                    {"status": WorkflowStatus.running.value, "error_code": None},
+                )
+            await self._graph.ainvoke(None, config)
+        snapshot = await self._graph.aget_state(config)
+        if snapshot.interrupts:
+            await self._graph.aupdate_state(config, {"status": WorkflowStatus.paused.value})
         state = await self._read_state(workflow_id)
         return self._outcome(workflow_id, state)
 
@@ -246,6 +258,13 @@ class WorkflowRuntime:
             max_corrections=int(state.get("max_corrections", self.settings.workflow_max_corrections)),
         )
         return await self.start(request, replay_of=workflow_id)
+
+    async def pause(self, workflow_id: str) -> bool:
+        state = await self._read_state(workflow_id)
+        if not state or state.get("status") in _TERMINAL or state.get("status") == WorkflowStatus.paused.value:
+            return False
+        self._pause_requests.add(workflow_id)
+        return True
 
     async def cancel(self, workflow_id: str) -> bool:
         state = await self._read_state(workflow_id)
@@ -272,6 +291,7 @@ class WorkflowRuntime:
         builder.add_node("review", self._review_node)
         builder.add_node("correct", self._correct_node)
         builder.add_node("apply", self._apply_node)
+        builder.add_node("pause_gate", self._pause_gate_node)
         builder.add_node("finalize", self._finalize_node)
 
         builder.add_edge(START, "classify")
@@ -285,7 +305,12 @@ class WorkflowRuntime:
             "develop", self._after_develop, {"test": "test", "review": "review", "finalize": "finalize"}
         )
         builder.add_conditional_edges(
-            "test", self._continue("review"), {"review": "review", "finalize": "finalize"}
+            "test", self._continue("pause_gate"), {"pause_gate": "pause_gate", "finalize": "finalize"}
+        )
+        builder.add_conditional_edges(
+            "pause_gate",
+            self._continue("review"),
+            {"review": "review", "finalize": "finalize"},
         )
         builder.add_conditional_edges(
             "review",
@@ -520,6 +545,18 @@ class WorkflowRuntime:
         )
         return {"apply": {"ok": True, "output": result.output}, "events": [event]}
 
+    async def _pause_gate_node(self, state: WorkflowState) -> dict[str, Any]:
+        workflow_id = state["workflow_id"]
+        if workflow_id in self._pause_requests:
+            self._emit(
+                workflow_id,
+                "workflow.paused",
+                WorkflowStatus.paused,
+                {"stage": "before_review"},
+            )
+            interrupt({"workflow_id": workflow_id, "stage": "before_review"})
+        return {}
+
     async def _finalize_node(self, state: WorkflowState) -> dict[str, Any]:
         status = _terminal_status(state)
         error_code = state.get("error_code")
@@ -730,8 +767,8 @@ class WorkflowRuntime:
                 workflow_id=workflow_id,
                 status=status,
                 output={"errors": state.get("errors", [])},
-                error_code=state.get("error_code") or "workflow_incomplete",
-                completed_at=datetime.now(UTC),
+                error_code=None if status is WorkflowStatus.paused else (state.get("error_code") or "workflow_incomplete"),
+                completed_at=None if status is WorkflowStatus.paused else datetime.now(UTC),
             )
         return WorkflowOutcome(
             workflow_id=workflow_id,

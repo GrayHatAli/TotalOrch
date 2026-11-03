@@ -23,7 +23,19 @@ After startup, refresh the registry before routing requests:
 ```bash
 curl -X POST http://localhost:8080/v1/registry/sync \
   -H "Authorization: Bearer $TOTAL_ORCH_API_KEY"
+curl http://localhost:8080/health
 ```
+
+The container persists the registry, route decisions, workflow checkpoints,
+API keys, and telemetry in the `total-orch-data` volume. Repository tools are
+disabled unless `ORCHESTRATOR_WORKSPACE_ROOT` is set and that path is mounted
+into the container; patch application additionally requires
+`ORCHESTRATOR_WORKFLOW_APPLY_CHANGES=true`. See
+[`docs/runbook.md`](../docs/runbook.md) for backup, restore, pause/resume, and
+provider-failure operations.
+
+Set `GATEWAY_TYPE=anthropic` (with `GATEWAY_API_KEY`) to use the direct
+Anthropic Messages adapter instead of the managed gateway.
 
 For an external OmniRoute deployment, do not start the compose service and set
 `OMNIROUTE_BASE_URL` to the external service URL. The application still talks

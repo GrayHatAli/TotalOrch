@@ -7,6 +7,7 @@ OmniRoute is the default managed gateway; any OpenAI-compatible router
 :func:`build_gateway`.
 """
 
+from .anthropic import AnthropicAdapter
 from .base import GatewayAdapter
 from .errors import GatewayError
 from .events import completion_event, error_event
@@ -23,6 +24,7 @@ from .omniroute import OmniRouteAdapter
 from .openai_compat import OpenAICompatAdapter
 
 __all__ = [
+    "AnthropicAdapter",
     "FakeGatewayAdapter",
     "GatewayAdapter",
     "GatewayCompletion",

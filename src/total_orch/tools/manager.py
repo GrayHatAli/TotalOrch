@@ -15,6 +15,7 @@ import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from threading import Lock
 
 from .models import ToolError, ToolResult
 
@@ -76,6 +77,9 @@ class ToolManager:
         self.timeout_seconds = timeout_seconds
         self.max_output_chars = max_output_chars
         self.max_files = max_files
+        self._process_lock = Lock()
+        self._active_processes: set[subprocess.Popen[str]] = set()
+        self._cancelled = False
 
     # -- filesystem ---------------------------------------------------------
 
@@ -101,6 +105,25 @@ class ToolManager:
             raise ToolError("invalid_limit", "limit must be positive")
         files = [self._relative(path) for path in self._files(pattern)][:limit]
         return ToolResult(ok=True, output="\n".join(files), metadata={"count": len(files)})
+
+    def project_metadata(self, role: str) -> ToolResult:
+        self._require(role, "index")
+        files = self._files()
+        suffixes: dict[str, int] = {}
+        for path in files:
+            suffixes[path.suffix or "(none)"] = suffixes.get(path.suffix or "(none)", 0) + 1
+        return ToolResult(
+            ok=True,
+            output=json.dumps(
+                {
+                    "root": self.root.name,
+                    "files": len(files),
+                    "languages": dict(sorted(suffixes.items(), key=lambda item: (-item[1], item[0]))),
+                    "git": (self.root / ".git").exists(),
+                },
+                ensure_ascii=False,
+            ),
+        )
 
     def index(self, role: str) -> ToolResult:
         self._require(role, "index")
@@ -188,6 +211,13 @@ class ToolManager:
             timeout=timeout_seconds or self.timeout_seconds,
         )
 
+    def cancel(self) -> None:
+        """Cancel the current tool invocation; the caller gets a non-zero result."""
+        self._cancelled = True
+        with self._process_lock:
+            for process in list(self._active_processes):
+                process.terminate()
+
     # -- internals ----------------------------------------------------------
 
     def _require(self, role: str, tool: str) -> None:
@@ -237,29 +267,39 @@ class ToolManager:
         stdin: str | None = None,
         timeout: float | None = None,
     ) -> ToolResult:
+        if self._cancelled:
+            raise ToolError("cancelled", "the tool invocation was cancelled")
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 list(args),
                 cwd=self.root,
-                input=stdin,
-                capture_output=True,
+                stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout or self.timeout_seconds,
-                check=False,
                 shell=False,
             )
         except FileNotFoundError as exc:
             raise ToolError("command_missing", f"command not found: {args[0]}") from exc
+        with self._process_lock:
+            self._active_processes.add(process)
+        try:
+            stdout, stderr = process.communicate(stdin, timeout=timeout or self.timeout_seconds)
         except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.communicate()
             raise ToolError("timeout", f"command timed out after {timeout or self.timeout_seconds}s") from exc
-        output = (completed.stdout + completed.stderr).strip()
+        finally:
+            with self._process_lock:
+                self._active_processes.discard(process)
+        output = (stdout + stderr).strip()
         truncated = len(output) > self.max_output_chars
         if truncated:
             output = output[: self.max_output_chars] + "\n[truncated]"
         return ToolResult(
-            ok=completed.returncode == 0,
+            ok=process.returncode == 0,
             output=output,
-            exit_code=completed.returncode,
+            exit_code=process.returncode,
             truncated=truncated,
             metadata={"command": " ".join(args)},
         )
