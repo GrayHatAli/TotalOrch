@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
+from threading import RLock
 from uuid import UUID
 
 from total_orch.domain import RouteDecision
@@ -39,16 +40,19 @@ class RouteDecisionStore:
 
     def __init__(self, database_path: str) -> None:
         self.database_path = database_path
-        self._connection = sqlite3.connect(database_path)
+        self._connection = sqlite3.connect(database_path, check_same_thread=False)
+        self._lock = RLock()
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA foreign_keys = ON")
 
     def initialize(self) -> None:
-        self._connection.executescript(_SCHEMA)
-        self._connection.commit()
+        with self._lock:
+            self._connection.executescript(_SCHEMA)
+            self._connection.commit()
 
     def close(self) -> None:
-        self._connection.close()
+        with self._lock:
+            self._connection.close()
 
     # -- writes --------------------------------------------------------------
 
@@ -59,38 +63,41 @@ class RouteDecisionStore:
         rewritten, so replaying a stored decision keeps the original facts.
         """
 
-        cursor = self._connection.execute(
-            "INSERT INTO route_decisions "
-            "(id, request_id, selected_endpoint_id, policy_version, payload, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(id) DO NOTHING",
-            (
-                str(decision.id),
-                str(decision.request_id),
-                decision.selected_endpoint_id,
-                decision.policy_version,
-                decision.model_dump_json(),
-                _utc_iso(decision.created_at),
-            ),
-        )
-        self._connection.commit()
-        return cursor.rowcount == 1
+        with self._lock:
+            cursor = self._connection.execute(
+                "INSERT INTO route_decisions "
+                "(id, request_id, selected_endpoint_id, policy_version, payload, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO NOTHING",
+                (
+                    str(decision.id),
+                    str(decision.request_id),
+                    decision.selected_endpoint_id,
+                    decision.policy_version,
+                    decision.model_dump_json(),
+                    _utc_iso(decision.created_at),
+                ),
+            )
+            self._connection.commit()
+            return cursor.rowcount == 1
 
     # -- queries -------------------------------------------------------------
 
     def get_decision(self, decision_id: UUID | str) -> RouteDecision:
-        row = self._connection.execute(
-            "SELECT payload FROM route_decisions WHERE id = ?", (str(decision_id),)
-        ).fetchone()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload FROM route_decisions WHERE id = ?", (str(decision_id),)
+            ).fetchone()
         if row is None:
             raise KeyError(f"unknown route decision: {decision_id}")
         return RouteDecision.model_validate_json(str(row["payload"]))
 
     def decisions_for_request(self, request_id: UUID | str) -> list[RouteDecision]:
-        rows = self._connection.execute(
-            "SELECT payload FROM route_decisions WHERE request_id = ? ORDER BY created_at, id",
-            (str(request_id),),
-        ).fetchall()
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT payload FROM route_decisions WHERE request_id = ? ORDER BY created_at, id",
+                (str(request_id),),
+            ).fetchall()
         return [RouteDecision.model_validate_json(str(row["payload"])) for row in rows]
 
     def list_decisions(
@@ -115,11 +122,14 @@ class RouteDecisionStore:
         sql = f"SELECT payload FROM route_decisions {where} ORDER BY created_at, id"
         if limit is not None and limit < 0:
             raise ValueError("limit must not be negative")
-        rows = self._connection.execute(sql, params).fetchall()
+        with self._lock:
+            rows = self._connection.execute(sql, params).fetchall()
         decisions = [RouteDecision.model_validate_json(str(row["payload"])) for row in rows]
         if explored is not None:
             decisions = [decision for decision in decisions if decision.explored is explored]
         return decisions if limit is None else decisions[:limit]
 
     def count_decisions(self) -> int:
-        return int(self._connection.execute("SELECT COUNT(*) AS n FROM route_decisions").fetchone()["n"])
+        with self._lock:
+            row = self._connection.execute("SELECT COUNT(*) AS n FROM route_decisions").fetchone()
+        return int(row["n"])

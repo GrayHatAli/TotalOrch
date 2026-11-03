@@ -39,6 +39,13 @@ def _int_env(name: str, default: int) -> int:
     return parsed
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _float_env(name: str, default: float) -> float:
     value = os.getenv(name)
     if value is None or value == "":
@@ -72,6 +79,13 @@ class Settings:
     omniroute_max_retries: int = 2
     registry_database_path: str = "registry.db"
     registry_stale_after_seconds: float = 604800.0
+    workflow_workspace_root: str | None = None
+    workflow_max_corrections: int = 1
+    workflow_node_timeout_seconds: float = 120.0
+    workflow_max_attempts: int = 2
+    workflow_apply_changes: bool = False
+    request_max_body_bytes: int = 1_048_576
+    rate_limit_per_minute: int = 120
     total_orch_api_key: str | None = None
     total_orch_host: str = "127.0.0.1"
     total_orch_port: int = 8080
@@ -97,6 +111,13 @@ class Settings:
             omniroute_max_retries=_int_env("OMNIROUTE_MAX_RETRIES", 2),
             registry_database_path=os.getenv("ORCHESTRATOR_REGISTRY_DATABASE_PATH", "registry.db"),
             registry_stale_after_seconds=_float_env("ORCHESTRATOR_REGISTRY_STALE_AFTER_SECONDS", 604800.0),
+            workflow_workspace_root=os.getenv("ORCHESTRATOR_WORKSPACE_ROOT") or None,
+            workflow_max_corrections=_int_env("ORCHESTRATOR_WORKFLOW_MAX_CORRECTIONS", 1),
+            workflow_node_timeout_seconds=_float_env("ORCHESTRATOR_WORKFLOW_NODE_TIMEOUT_SECONDS", 120.0),
+            workflow_max_attempts=_int_env("ORCHESTRATOR_WORKFLOW_MAX_ATTEMPTS", 2),
+            workflow_apply_changes=_bool_env("ORCHESTRATOR_WORKFLOW_APPLY_CHANGES", False),
+            request_max_body_bytes=_int_env("ORCHESTRATOR_REQUEST_MAX_BODY_BYTES", 1_048_576),
+            rate_limit_per_minute=_int_env("ORCHESTRATOR_RATE_LIMIT_PER_MINUTE", 120),
             total_orch_api_key=os.getenv("TOTAL_ORCH_API_KEY") or None,
             total_orch_host=os.getenv("TOTAL_ORCH_HOST", "127.0.0.1"),
             total_orch_port=_int_env("TOTAL_ORCH_PORT", 8080),
@@ -123,6 +144,13 @@ class Settings:
             "omniroute_max_retries": self.omniroute_max_retries,
             "registry_database_path": self.registry_database_path,
             "registry_stale_after_seconds": self.registry_stale_after_seconds,
+            "workflow_workspace_root": self.workflow_workspace_root,
+            "workflow_max_corrections": self.workflow_max_corrections,
+            "workflow_node_timeout_seconds": self.workflow_node_timeout_seconds,
+            "workflow_max_attempts": self.workflow_max_attempts,
+            "workflow_apply_changes": self.workflow_apply_changes,
+            "request_max_body_bytes": self.request_max_body_bytes,
+            "rate_limit_per_minute": self.rate_limit_per_minute,
             "total_orch_api_key_configured": self.total_orch_api_key is not None,
             "total_orch_host": self.total_orch_host,
             "total_orch_port": self.total_orch_port,

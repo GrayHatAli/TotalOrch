@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from total_orch.domain import ModelFamily, ModelVariant, ProviderEndpoint, SourceProvenance
+from total_orch.gateway import GatewayError
 
 from .identity import IdentityRules, split_variant_id
 from .merge import assemble_endpoint, assemble_family, assemble_variant
@@ -54,6 +55,7 @@ class SourceSyncResult:
     variants: int = 0
     endpoints: int = 0
     error: str | None = None
+    error_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +148,15 @@ class ModelRegistryService:
             batch = await source.fetch()
         except Exception as exc:  # noqa: BLE001 - isolation by design; one source never aborts the pass
             message = f"{type(exc).__name__}: {exc}"
-            return SourceSyncResult(source=source.source, status="error", error=message), None
+            return (
+                SourceSyncResult(
+                    source=source.source,
+                    status="error",
+                    error=message,
+                    error_kind=classify_sync_error(exc),
+                ),
+                None,
+            )
         return (
             SourceSyncResult(
                 source=source.source,
@@ -324,3 +334,20 @@ class ModelRegistryService:
             variants=tuple(self._store.stale_entities("variant", max_age, now=now)),
             endpoints=tuple(self._store.stale_entities("endpoint", max_age, now=now)),
         )
+
+
+def classify_sync_error(exc: BaseException) -> str:
+    """Distinguish catalog, authentication, and provider failures for live-sync diagnostics."""
+
+    if isinstance(exc, GatewayError):
+        status = exc.status_code
+        if status in {401, 403} or exc.code in {"unauthorized", "forbidden", "authentication_failed"}:
+            return "authentication"
+        if status in {404, 400, 422} or exc.code in {"invalid_gateway_response", "invalid_stream_payload"}:
+            return "catalog"
+        if status is not None and status >= 500 or exc.code in {"gateway_timeout", "provider_unavailable"}:
+            return "provider"
+        return "gateway"
+    if type(exc).__name__ in {"HTTPStatusError", "HTTPError", "ConnectError", "ReadTimeout", "ConnectTimeout"}:
+        return "provider"
+    return "unknown"

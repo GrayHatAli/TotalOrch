@@ -4,7 +4,13 @@ import pytest
 
 from total_orch.api import TotalOrchApplication
 from total_orch.config import Settings
-from total_orch.domain import ProviderConnectionRef
+from total_orch.domain import (
+    ModelCapabilities,
+    ModelFamily,
+    ModelVariant,
+    ProviderConnectionRef,
+    ProviderEndpoint,
+)
 from total_orch.gateway import (
     FakeGatewayAdapter,
     GatewayCompletion,
@@ -224,3 +230,181 @@ def test_connection_secret_reference_builds_direct_openai_adapter(monkeypatch: p
     assert isinstance(adapter, OpenAICompatAdapter)
     assert adapter._base_url == "http://provider.test"
     assert adapter._api_key == "provider-secret-for-test"
+
+
+class _RoleGateway(FakeGatewayAdapter):
+    """Answer each workflow role with valid structured JSON."""
+
+    def __init__(self) -> None:
+        super().__init__(connections=(ProviderConnectionRef(id="openai-main", provider="openai"),))
+        self.calls: list[object] = []
+
+    async def complete(self, request):  # type: ignore[no-untyped-def]
+        self.calls.append(request)
+        system = request.messages[0].content
+        if "the planner agent" in system:
+            text = '{"summary": "plan", "steps": [], "risks": []}'
+        elif "the reviewer agent" in system:
+            text = '{"approved": true, "summary": "ok", "issues": []}'
+        else:
+            text = '{"summary": "done", "changes": [], "diff": ""}'
+        return GatewayCompletion(
+            request_id="req",
+            provider=request.provider,
+            model=request.model,
+            output_text=text,
+            finish_reason="stop",
+        )
+
+
+def task_application(rate_limit_per_minute: int = 1_000) -> TotalOrchApplication:
+    store = ModelRegistryStore(":memory:")
+    store.initialize()
+    store.upsert_family(ModelFamily(id="openai/gpt", publisher="openai"), {}, "test")
+    store.upsert_variant(
+        ModelVariant(
+            id="openai/gpt:gpt-test",
+            family_id="openai/gpt",
+            name="gpt-test",
+            context_window=128_000,
+            capabilities=ModelCapabilities(
+                tool_calling=True,
+                reasoning=True,
+                streaming=True,
+                structured_output=True,
+            ),
+        ),
+        {},
+        "test",
+    )
+    store.upsert_endpoint(
+        ProviderEndpoint(
+            id="openai/gpt-test",
+            provider="openai",
+            provider_model_name="gpt-test",
+            model_variant_id="openai/gpt:gpt-test",
+            connection=ProviderConnectionRef(id="openai-main", provider="openai"),
+            health=0.9,
+            latency_p95_ms=100.0,
+            capabilities=ModelCapabilities(
+                tool_calling=True,
+                reasoning=True,
+                streaming=True,
+                structured_output=True,
+            ),
+        ),
+        {},
+        "test",
+    )
+    settings = Settings(
+        environment="test",
+        total_orch_api_key="totalorch-test",
+        workflow_max_attempts=1,
+        rate_limit_per_minute=rate_limit_per_minute,
+    )
+    return TotalOrchApplication(
+        settings,
+        ModelRegistryService(store, IdentityRules()),
+        _RoleGateway(),
+    )
+
+
+def test_provider_export_is_redacted_and_import_requires_confirmation() -> None:
+    app = application()
+    headers = {"Authorization": "Bearer totalorch-test"}
+    app.handle(
+        "POST",
+        "/v1/providers/connections",
+        headers=headers,
+        body=json.dumps(
+            {
+                "id": "openai-main",
+                "provider": "openai",
+                "auth_method": "api_key",
+                "secret_ref": "env://OPENAI_API_KEY",
+            }
+        ).encode(),
+    )
+
+    exported = app.handle("GET", "/v1/providers/export", headers=headers)
+    rejected = app.handle(
+        "POST",
+        "/v1/providers/import",
+        headers=headers,
+        body=json.dumps({"data": [{"id": "imported", "provider": "openai", "auth_method": "api_key", "secret_ref": "env://X"}]}).encode(),
+    )
+    accepted = app.handle(
+        "POST",
+        "/v1/providers/import",
+        headers=headers,
+        body=json.dumps(
+            {
+                "confirm": True,
+                "data": [{"id": "imported", "provider": "openai", "auth_method": "api_key", "secret_ref": "env://X"}],
+            }
+        ).encode(),
+    )
+
+    assert exported.status_code == 200
+    assert exported.body["credentials_included"] is False
+    assert "secret_ref" not in json.dumps(exported.body)
+    assert rejected.status_code == 400
+    assert accepted.status_code == 201
+    assert accepted.body["imported"] == 1
+
+
+def test_pools_profiles_and_route_preview_use_the_registry() -> None:
+    app = task_application()
+    headers = {"Authorization": "Bearer totalorch-test"}
+
+    pools = app.handle("GET", "/v1/models/pools", headers=headers)
+    profiles = app.handle("GET", "/v1/agents/profiles", headers=headers)
+    preview = app.handle(
+        "POST",
+        "/v1/routing/preview",
+        headers=headers,
+        body=json.dumps({"agent_profile_id": "developer-default", "task_type": "feature"}).encode(),
+    )
+
+    assert pools.status_code == 200
+    assert pools.body["data"]
+    assert any(profile["id"] == "developer-default" for profile in profiles.body["profiles"])
+    assert preview.status_code == 200
+    assert preview.body["selected_endpoint_id"] == "openai/gpt-test"
+    assert preview.body["explanation"]
+
+
+def test_task_submission_runs_in_the_background_and_exposes_status_and_events() -> None:
+    app = task_application()
+    headers = {"Authorization": "Bearer totalorch-test"}
+
+    submitted = app.handle(
+        "POST",
+        "/v1/tasks",
+        headers=headers,
+        body=json.dumps({"request": "Add a health endpoint", "run_tests": False}).encode(),
+    )
+    workflow_id = submitted.body["data"]["workflow_id"]
+    finished = app._workflow_service.wait(workflow_id, timeout=5)
+    status = app.handle("GET", f"/v1/tasks/{workflow_id}", headers=headers)
+    events = app.handle("GET", f"/v1/tasks/{workflow_id}/events", headers=headers)
+
+    assert submitted.status_code == 202
+    assert finished is not None
+    assert status.status_code == 200
+    assert status.body["data"]["status"] == "completed"
+    assert any(event["event_type"] == "workflow.completed" for event in events.body["data"])
+
+
+def test_health_reports_startup_checks_and_rate_limit_rejects_bursts() -> None:
+    app = task_application(rate_limit_per_minute=1)
+    headers = {"Authorization": "Bearer totalorch-test"}
+
+    health = app.handle("GET", "/health")
+    first = app.handle("GET", "/v1/models", headers=headers, client="10.0.0.1")
+    second = app.handle("GET", "/v1/models", headers=headers, client="10.0.0.1")
+
+    assert health.status_code == 200
+    assert any(check["name"] == "gateway" for check in health.body["checks"])
+    assert first.status_code == 200
+    assert second.status_code == 429
