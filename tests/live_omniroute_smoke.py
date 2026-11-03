@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 from total_orch.config import Settings
-from total_orch.gateway import GatewayRequest, OmniRouteAdapter
+from total_orch.gateway import GatewayError, GatewayRequest, OmniRouteAdapter
 from total_orch.gateway.models import ChatMessage
 
 
@@ -45,6 +45,9 @@ async def main() -> int:
         extra={"max_tokens": 8},
     )
 
+    healthy = await adapter.health_check(request.provider)
+    print(f"health_ok: {healthy}")
+
     completion = await adapter.complete(request)
     print("completion_ok: true")
     print(f"routed_model: {completion.model}")
@@ -60,6 +63,21 @@ async def main() -> int:
     print("stream_ok: true")
     print(f"stream_chunks: {len(chunks)}")
     print(f"stream_output: {''.join(chunk.delta for chunk in chunks)[:200]}")
+
+    try:
+        await adapter.complete(
+            GatewayRequest(
+                provider=request.provider,
+                model="definitely-not-a-configured-model",
+                messages=(ChatMessage(role="user", content="should fail"),),
+                extra={"max_tokens": 4},
+            )
+        )
+    except GatewayError as exc:
+        print(f"failure_isolation_ok: true ({exc.code}, retryable={exc.retryable})")
+    else:
+        print("failure_isolation_ok: false")
+        return 1
     return 0
 
 
